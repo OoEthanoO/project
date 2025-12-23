@@ -3,6 +3,7 @@ import TaskForm from './components/TaskForm';
 import TaskTree from './components/TaskTree';
 import SimpleListView from './components/SimpleListView';
 import ChatPanel from './components/ChatPanel';
+import AdminPanel from './components/AdminPanel';
 import { ChatMessage, TaskNode } from './types';
 import { addChild, findTask, randomId, removeTask, reorderWithinParent, updateTask } from './lib/task-utils';
 import { chatWithPlanner, generateSubtasks } from './lib/ai';
@@ -367,6 +368,11 @@ const App = () => {
 
   if (!user) {
     return <AuthForm onLogin={handleAuthLogin} onRegister={handleAuthRegister} notice={authNotice} onClearNotice={() => setAuthNotice('')} />;
+  }
+
+  // Dedicated admin view (SPA route)
+  if (typeof window !== 'undefined' && window.location.pathname.startsWith('/admin')) {
+    return <AdminPanel user={user} />;
   }
 
   return (

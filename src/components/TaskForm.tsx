@@ -15,10 +15,22 @@ const TaskForm = ({ onSubmit, parentId = null, onCancel }: Props) => {
   const [startDate, setStartDate] = useState('');
   const [description, setDescription] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [attachError, setAttachError] = useState('');
 
   const handleFiles = async (files: FileList | null) => {
     if (!files) return;
-    const extracted = await Promise.all(Array.from(files).map((file) => extractAttachment(file)));
+    const allowed = ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'gif'];
+    const incoming = Array.from(files);
+    const disallowed = incoming.filter((f) => {
+      const ext = (f.name.split('.').pop() || '').toLowerCase();
+      return !allowed.includes(ext);
+    });
+    if (disallowed.length) {
+      setAttachError('Only PDF or image files (jpg, jpeg, png, webp, gif) are supported. Please convert other files to PDF.');
+      return;
+    }
+    setAttachError('');
+    const extracted = await Promise.all(incoming.map((file) => extractAttachment(file)));
     setAttachments((prev) => [...prev, ...extracted]);
   };
 
@@ -96,7 +108,20 @@ const TaskForm = ({ onSubmit, parentId = null, onCancel }: Props) => {
       </div>
       <div style={{ marginTop: 10 }}>
         <label className="muted">Attachments</label>
-        <input type="file" multiple onChange={(e) => handleFiles(e.target.files)} />
+        <input
+          type="file"
+          accept=".pdf,.jpg,.jpeg,.png,.webp,.gif"
+          multiple
+          onChange={(e) => handleFiles(e.target.files)}
+        />
+        <p className="muted" style={{ fontSize: 12, margin: '4px 0' }}>
+          Supported: PDF, JPG, JPEG, PNG, WEBP, GIF. Convert other files (e.g., DOCX/PPTX) to PDF before attaching.
+        </p>
+        {attachError && (
+          <p className="muted" style={{ color: '#f88', marginTop: 4 }}>
+            {attachError}
+          </p>
+        )}
         {attachments.length > 0 && (
           <div className="chips">
             {attachments.map((a) => (
