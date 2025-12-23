@@ -187,6 +187,10 @@ const App = () => {
   useEffect(() => {
     if (!user || !hydrated) return;
     const interval = setInterval(async () => {
+      // Don't poll if user is actively working (prevents interrupting task creation or other modals)
+      if (showTaskModal || showInstructionModal || showTopUpModal || chatting) {
+        return;
+      }
       try {
         const state = await fetchState(user.id);
         setTasks(state.tasks || []);
@@ -210,7 +214,7 @@ const App = () => {
       }
     }, 10000); // 10s poll
     return () => clearInterval(interval);
-  }, [user, hydrated]);
+  }, [user, hydrated, showTaskModal, showInstructionModal, showTopUpModal, chatting, defaultModel]);
 
   const handleAuthLogin = async (email: string, password: string, remember: boolean) => {
     const u = await login(email, password, remember);
