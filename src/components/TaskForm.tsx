@@ -12,6 +12,7 @@ type Props = {
 const TaskForm = ({ onSubmit, parentId = null, onCancel }: Props) => {
   const [title, setTitle] = useState('');
   const [dueDate, setDueDate] = useState('');
+  const [startDate, setStartDate] = useState('');
   const [description, setDescription] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
 
@@ -29,6 +30,7 @@ const TaskForm = ({ onSubmit, parentId = null, onCancel }: Props) => {
       title: title.trim(),
       description: description.trim(),
       dueDate: dueDate || undefined,
+      startDate: startDate || undefined,
       attachments,
       children: [],
       parentId,
@@ -40,6 +42,7 @@ const TaskForm = ({ onSubmit, parentId = null, onCancel }: Props) => {
     setDescription('');
     setAttachments([]);
     setDueDate('');
+    setStartDate('');
     onCancel?.();
   };
 
@@ -53,6 +56,10 @@ const TaskForm = ({ onSubmit, parentId = null, onCancel }: Props) => {
         <div>
           <label className="muted">Due date</label>
           <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+        </div>
+        <div>
+          <label className="muted">Start date (optional)</label>
+          <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
         </div>
       </div>
       <div style={{ marginTop: 10 }}>

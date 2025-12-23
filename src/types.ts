@@ -15,6 +15,7 @@ export type TaskNode = {
   title: string;
   description?: string;
   dueDate?: string;
+  startDate?: string;
   attachments: Attachment[];
   children: TaskNode[];
   parentId?: string | null;

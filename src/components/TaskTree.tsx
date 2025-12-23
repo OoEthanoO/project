@@ -73,6 +73,7 @@ const TaskNodeView = ({
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(task.title);
   const [dueDate, setDueDate] = useState(task.dueDate || '');
+  const [startDate, setStartDate] = useState(task.startDate || '');
   const [description, setDescription] = useState(task.description || '');
   const [attachments, setAttachments] = useState<Attachment[]>(task.attachments || []);
   const isDone = task.status === 'done';
@@ -89,15 +90,28 @@ const TaskNodeView = ({
       <div className="task-header">
         <div>
           {editing ? (
-            <div className="form-row">
-              <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" />
-              <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-            </div>
+            <>
+              <div className="form-row">
+                <div>
+                  <label className="muted">Title</label>
+                  <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" />
+                </div>
+                <div>
+                  <label className="muted">Due date</label>
+                  <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+                </div>
+                <div>
+                  <label className="muted">Start date</label>
+                  <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+                </div>
+              </div>
+            </>
           ) : (
             <p className="task-title">{task.title}</p>
           )}
           <div className="task-meta">
             {task.dueDate && <span className="badge">Due {task.dueDate}</span>}
+            {task.startDate && <span className="badge">Start {task.startDate}</span>}
             <span className="badge">{task.status ?? 'open'}</span>
             <span className={`badge ${task.createdBy === 'ai' ? 'badge-ai' : 'badge-user'}`}>
               {task.createdBy === 'ai' ? 'AI' : 'User'}
@@ -166,6 +180,7 @@ const TaskNodeView = ({
               onUpdate(task.id, {
                 title: title.trim() || '(untitled)',
                 dueDate: dueDate || undefined,
+                startDate: startDate || undefined,
                 description: description.trim(),
                 attachments
               });

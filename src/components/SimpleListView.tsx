@@ -63,6 +63,7 @@ const ListItem = ({
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(task.title);
   const [dueDate, setDueDate] = useState(task.dueDate || '');
+  const [startDate, setStartDate] = useState(task.startDate || '');
   const [attachments, setAttachments] = useState<Attachment[]>(task.attachments || []);
   const canSplit = task.dueDate ? task.dueDate > new Date().toISOString().slice(0, 10) && task.status !== 'done' : false;
 
@@ -72,14 +73,25 @@ const ListItem = ({
         <div>
           {editing ? (
             <div className="form-row">
-              <input value={title} onChange={(e) => setTitle(e.target.value)} />
-              <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+              <div>
+                <label className="muted">Title</label>
+                <input value={title} onChange={(e) => setTitle(e.target.value)} />
+              </div>
+              <div>
+                <label className="muted">Due date</label>
+                <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+              </div>
+              <div>
+                <label className="muted">Start date</label>
+                <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+              </div>
             </div>
           ) : (
             <p className="task-title">{task.title}</p>
           )}
           <div className="task-meta">
             {task.dueDate && <span className="badge">Due {task.dueDate}</span>}
+            {task.startDate && <span className="badge">Start {task.startDate}</span>}
             {task.parentId && <span className="badge">From parent</span>}
             <span className="badge">{task.status ?? 'open'}</span>
             <span className={`badge ${task.createdBy === 'ai' ? 'badge-ai' : 'badge-user'}`}>
@@ -135,7 +147,7 @@ const ListItem = ({
           onClick={(e) => {
             e.stopPropagation();
             if (editing) {
-              onUpdate(task.id, { title: title.trim() || '(untitled)', dueDate: dueDate || undefined, attachments });
+              onUpdate(task.id, { title: title.trim() || '(untitled)', dueDate: dueDate || undefined, startDate: startDate || undefined, attachments });
             }
             setEditing((v) => !v);
           }}
