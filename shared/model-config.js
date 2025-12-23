@@ -5,7 +5,7 @@
 
 export const MODEL_TIERS = [
   {
-    id: 'allenai/olmo-3.1-32b-think:free',
+    id: 'xiaomi/mimo-v2-flash:free',
     label: 'Tier 0 — Free (text-only)',
     note: 'Free text-only; no attachments. Paste important file content into descriptions.',
     multimodal: false,
