@@ -78,3 +78,34 @@ export const reorderWithinParent = (tasks, targetId, direction) => {
     return move(tasks || []);
 };
 export const randomId = () => (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2));
+/**
+ * Collect all parent tasks up the chain from a given task ID
+ * Returns array of ancestors from immediate parent to root, in order
+ * @param {Object[]} tasks - Root task list
+ * @param {string} id - Task ID to find ancestors for
+ * @returns {Object[]} Array of ancestor tasks (empty if task not found or is root)
+ */
+export const getAncestors = (tasks, id) => {
+  const ancestors = [];
+  
+  const traverse = (list, parentTask = null) => {
+    for (const task of list || []) {
+      if (task.id === id && parentTask) {
+        // Found the task; now collect all parents up the chain
+        let current = parentTask;
+        while (current) {
+          ancestors.unshift(current);
+          current = current.parentTask || null;
+        }
+        return true;
+      }
+      // Mark children with their parent for traversal
+      const childrenWithParent = (task.children || []).map(c => ({ ...c, parentTask: task }));
+      if (traverse(childrenWithParent, task)) return true;
+    }
+    return false;
+  };
+  
+  traverse(tasks);
+  return ancestors;
+};

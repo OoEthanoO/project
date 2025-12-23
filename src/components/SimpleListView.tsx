@@ -10,6 +10,7 @@ type Props = {
   onDelete: (id: string) => void;
   onUpdate: (id: string, updates: Partial<TaskNode>) => void;
   planningIds?: Set<string>;
+  onEditModeChange?: (isEditing: boolean) => void;
 };
 
 type FlatTask = TaskNode & { depth: number; order: number };
@@ -23,7 +24,7 @@ const flattenTasks = (tasks: TaskNode[], depth = 0, orderRef = { value: 0 }): Fl
   });
 };
 
-const SimpleListView = ({ tasks, onSplit, onSelect, onDelete, onUpdate, planningIds = new Set() }: Props) => {
+const SimpleListView = ({ tasks, onSplit, onSelect, onDelete, onUpdate, planningIds = new Set(), onEditModeChange }: Props) => {
   const flat = flattenTasks(tasks || []).sort((a, b) => {
     if (!a.dueDate && !b.dueDate) {
       // No due date: preserve tree order
@@ -42,7 +43,7 @@ const SimpleListView = ({ tasks, onSplit, onSelect, onDelete, onUpdate, planning
   return (
     <div className="task-list">
       {flat.map((task) => (
-        <ListItem key={task.id} task={task} onSplit={onSplit} onSelect={onSelect} onDelete={onDelete} onUpdate={onUpdate} />
+        <ListItem key={task.id} task={task} onSplit={onSplit} onSelect={onSelect} onDelete={onDelete} onUpdate={onUpdate} onEditModeChange={onEditModeChange} />
       ))}
     </div>
   );
@@ -54,7 +55,8 @@ const ListItem = ({
   onSelect,
   onDelete,
   onUpdate,
-  planningIds
+  planningIds,
+  onEditModeChange
 }: {
   task: FlatTask;
   onSplit: (id: string) => void;
@@ -62,6 +64,7 @@ const ListItem = ({
   onDelete: (id: string) => void;
   onUpdate: (id: string, updates: Partial<TaskNode>) => void;
   planningIds?: Set<string>;
+  onEditModeChange?: (isEditing: boolean) => void;
 }) => {
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(task.title);
@@ -211,7 +214,11 @@ const ListItem = ({
                 attachments
               });
             }
-            setEditing((v) => !v);
+            setEditing((v) => {
+              const newState = !v;
+              onEditModeChange?.(newState);
+              return newState;
+            });
           }}
         >
           {editing ? 'Save' : 'Edit'}

@@ -114,7 +114,7 @@ const callOpenRouter = async ({ messages, modelId, plugins }) => {
   return { content, usage, modelUsed, totalCostUsd: totalCost };
 };
 
-export const generateSubtasks = async ({ task, conversation = [], globalInstruction, modelId }) => {
+export const generateSubtasks = async ({ task, ancestors = [], conversation = [], globalInstruction, modelId }) => {
   const supportsFilesFlag = supportsFiles(modelId);
   const now = new Date();
   let start = now;
@@ -135,9 +135,15 @@ export const generateSubtasks = async ({ task, conversation = [], globalInstruct
     .map((a) => `${a.name || 'file'}:\n${(a.content || '').slice(0, 800)}`)
     .join('\n---\n');
   
+  // Build hierarchy context from ancestors
+  const hierarchyParts = ancestors.map((a) => a.title);
+  hierarchyParts.push(task.title);
+  const hierarchyString = hierarchyParts.join(' > ');
+  
   // Resolve attachments from R2 if needed
   console.log('[generateSubtasks] Task attachments:', task.attachments);
   console.log('[generateSubtasks] Model supports files:', supportsFilesFlag);
+  console.log('[generateSubtasks] Hierarchy:', hierarchyString);
   
   const imageAttachments = (task.attachments || [])
     .filter((a) => (a.dataUrl && a.dataUrl.startsWith('data:image')) || (a.r2Key && a.contentType?.startsWith('image/')))
@@ -189,6 +195,7 @@ export const generateSubtasks = async ({ task, conversation = [], globalInstruct
     'Respond ONLY as JSON with shape: {"items":[{"title":"...", "description":"...", "dueDate":"YYYY-MM-DD" | null}]}',
     globalInstruction ? `Global instruction: ${globalInstruction}` : '',
     '',
+    ancestors.length > 0 ? `Task hierarchy (root → parent → current): ${hierarchyString}` : '',
     `Planning start date: ${formatDate(start)}.`,
     `Task title: ${task.title}`,
     `Task due: ${task.dueDate ?? 'not provided'}`,

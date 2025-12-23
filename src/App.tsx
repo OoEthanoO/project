@@ -6,7 +6,7 @@ import SimpleListView from './components/SimpleListView';
 import ChatPanel from './components/ChatPanel';
 import AdminPanel from './components/AdminPanel';
 import { ChatMessage, TaskNode } from './types';
-import { addChild, findTask, randomId, removeTask, reorderWithinParent, updateTask, getR2KeysForTask } from './lib/task-utils';
+import { addChild, findTask, randomId, removeTask, reorderWithinParent, updateTask, getR2KeysForTask, getAncestors } from './lib/task-utils';
 import { chatWithPlanner, generateSubtasks } from './lib/ai';
 import { useEffect } from 'react';
 import AuthForm from './components/AuthForm';
@@ -374,7 +374,8 @@ const App = () => {
       return next;
     });
     try {
-      const subtasks = await generateSubtasks({ task, conversation: messages, globalInstruction, modelId, userId: user.id });
+      const ancestors = getAncestors(tasks, id);
+      const subtasks = await generateSubtasks({ task, ancestors, conversation: messages, globalInstruction, modelId, userId: user.id });
       setTasks((prev) =>
         updateTask(prev, id, (t) => ({
           ...t,
@@ -468,7 +469,7 @@ const App = () => {
             </div>
             <div className="pill" title="Account balance (non-refundable)">
               <span>Balance</span>
-              <strong>${(balanceCents / 100).toFixed(6)}</strong>
+              <strong>${(balanceCents / 100).toFixed(2)}</strong>
             </div>
             <button className="secondary" onClick={() => setShowTopUpModal(true)}>
               Add funds
@@ -576,6 +577,7 @@ const App = () => {
             }}
             onUpdate={handleUpdateTask}
             planningIds={planningIds}
+            onEditModeChange={setIsEditingTask}
           />
         )}
         <footer style={{ marginTop: '40px', paddingTop: '20px', borderTop: '1px solid #e0e0e0', textAlign: 'center' }}>

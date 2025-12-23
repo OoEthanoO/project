@@ -3,11 +3,11 @@ import { apiCall } from './api-client.js';
 
 const apiSplit = '/api/ai/split';
 const apiChat = '/api/ai/chat';
-export const generateSubtasks = async ({ task, conversation, globalInstruction, modelId, userId }) => {
+export const generateSubtasks = async ({ task, ancestors, conversation, globalInstruction, modelId, userId }) => {
     const res = await apiCall(apiSplit, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ task, conversation, globalInstruction, modelId, userId })
+        body: JSON.stringify({ task, ancestors, conversation, globalInstruction, modelId, userId })
     });
     if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
