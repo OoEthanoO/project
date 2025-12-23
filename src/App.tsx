@@ -160,7 +160,13 @@ const App = () => {
         if (!res.ok) return;
         const data = await res.json();
         if (cancelled) return;
+        // Don't reload if user is actively working (modal open or chatting)
         if (serverVersion && data.version && data.version !== serverVersion) {
+          if (showTaskModal || showInstructionModal || showTopUpModal || chatting) {
+            console.log('[version] Server updated but postponing reload (user is active)');
+            return;
+          }
+          console.log('[version] Server updated, reloading...');
           window.location.reload();
           return;
         }
@@ -175,7 +181,7 @@ const App = () => {
       cancelled = true;
       clearInterval(id);
     };
-  }, [serverVersion]);
+  }, [serverVersion, showTaskModal, showInstructionModal, showTopUpModal, chatting]);
 
   // Lightweight polling to stay in sync across devices/browsers
   useEffect(() => {
