@@ -77,7 +77,8 @@ const App = () => {
     }
   ];
   const [globalInstruction, setGlobalInstruction] = useState('');
-  const [modelId, setModelId] = useState(() => import.meta.env.VITE_OPENAI_MODEL || 'gpt-4o-mini');
+  const defaultModel = modelTiers[0]?.id || 'meta-llama/llama-3.3-70b-instruct:free';
+  const [modelId, setModelId] = useState(() => import.meta.env.VITE_OPENAI_MODEL || defaultModel);
   const modelDesc =
     modelTiers.find((t) => t.id === modelId)?.note ||
     'Pick a model tier. Paid tiers handle attachments; Tier 0 is text-only.';
@@ -101,7 +102,7 @@ const App = () => {
         const chat = state.chat || [];
         setMessages(chat.length ? chat : [initialCoachMessage()]);
         setGlobalInstruction(state.config?.globalInstruction || '');
-        setModelId(state.config?.modelId || import.meta.env.VITE_OPENAI_MODEL || 'gpt-4o-mini');
+        setModelId(state.config?.modelId || import.meta.env.VITE_OPENAI_MODEL || defaultModel);
         setSelectedTaskId(state.selectedTaskId || null);
         try {
           const bal = await fetchBalance(user.id);
@@ -152,7 +153,7 @@ const App = () => {
         const chat = state.chat || [];
         setMessages(chat.length ? chat : [initialCoachMessage()]);
         setGlobalInstruction(state.config?.globalInstruction || '');
-        setModelId(state.config?.modelId || import.meta.env.VITE_OPENAI_MODEL || 'gpt-4o-mini');
+        setModelId(state.config?.modelId || import.meta.env.VITE_OPENAI_MODEL || defaultModel);
         setSelectedTaskId(state.selectedTaskId || null);
         try {
           const bal = await fetchBalance(user.id);

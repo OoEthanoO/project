@@ -26,6 +26,11 @@ app.post('/api/ai/split', async (req, res) => {
   try {
     const { task, conversation, globalInstruction, modelId, userId } = req.body;
     if (!userId) return res.status(400).json({ error: 'Missing userId' });
+    const isFreeModel = modelId === 'meta-llama/llama-3.3-70b-instruct:free';
+    if (!isFreeModel) {
+      const bal = await getBalance(userId);
+      if (bal <= 0) return res.status(402).json({ error: 'Insufficient balance' });
+    }
     const result = await generateSubtasks({ task, conversation, globalInstruction, modelId });
     if (result.totalCostUsd > 0) {
       const amountCents = Math.ceil(result.totalCostUsd * 100 * 2); // 100% revenue -> double charge
@@ -48,6 +53,11 @@ app.post('/api/ai/chat', async (req, res) => {
   try {
     const { prompt, tasks, globalInstruction, selectedTaskId, modelId, userId } = req.body;
     if (!userId) return res.status(400).json({ error: 'Missing userId' });
+    const isFreeModel = modelId === 'meta-llama/llama-3.3-70b-instruct:free';
+    if (!isFreeModel) {
+      const bal = await getBalance(userId);
+      if (bal <= 0) return res.status(402).json({ error: 'Insufficient balance' });
+    }
     const result = await chatWithPlanner({ prompt, tasks, globalInstruction, selectedTaskId, modelId });
     if (result.totalCostUsd > 0) {
       const amountCents = Math.ceil(result.totalCostUsd * 100 * 2); // 100% revenue -> double charge
