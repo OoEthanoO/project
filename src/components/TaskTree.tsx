@@ -98,11 +98,35 @@ const TaskNodeView = ({
                 </div>
                 <div>
                   <label className="muted">Due date</label>
-                  <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <input
+                      className={`date-input ${dueDate ? '' : 'empty'}`}
+                      type="date"
+                      value={dueDate}
+                      onChange={(e) => setDueDate(e.target.value)}
+                    />
+                    {dueDate && (
+                      <button type="button" className="subtle" onClick={() => setDueDate('')}>
+                        Clear
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div>
                   <label className="muted">Start date</label>
-                  <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <input
+                      className={`date-input ${startDate ? '' : 'empty'}`}
+                      type="date"
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                    />
+                    {startDate && (
+                      <button type="button" className="subtle" onClick={() => setStartDate('')}>
+                        Clear
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             </>

@@ -214,6 +214,15 @@ textarea {
   gap: 12px;
 }
 
+.date-input.empty {
+  border-color: rgba(255, 255, 255, 0.25);
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.date-input.empty::placeholder {
+  color: rgba(255, 255, 255, 0.4);
+}
+
 .divider {
   height: 1px;
   background: var(--border);
