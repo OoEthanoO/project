@@ -13,6 +13,7 @@ type Props = {
   onUpdate: (id: string, updates: Partial<TaskNode>) => void;
   selectedId?: string | null;
   planningIds?: Set<string>;
+  onEditModeChange?: (isEditing: boolean) => void;
 };
 
 const TaskTree = ({
@@ -23,7 +24,8 @@ const TaskTree = ({
   onDelete,
   onUpdate,
   selectedId,
-  planningIds = new Set()
+  planningIds = new Set(),
+  onEditModeChange
 }: Props) => {
   const safeTasks = tasks || [];
   return (
@@ -40,6 +42,7 @@ const TaskTree = ({
           onUpdate={onUpdate}
           selectedId={selectedId}
           planningIds={planningIds}
+          onEditModeChange={onEditModeChange}
         />
       ))}
     </div>
@@ -68,7 +71,8 @@ const TaskNodeView = ({
   onDelete,
   onUpdate,
   selectedId,
-  planningIds
+  planningIds,
+  onEditModeChange
 }: {
   task: TaskNode;
   depth: number;
@@ -79,6 +83,7 @@ const TaskNodeView = ({
   selectedId?: string | null;
   onUpdate: (id: string, updates: Partial<TaskNode>) => void;
   planningIds?: Set<string>;
+  onEditModeChange?: (isEditing: boolean) => void;
 }) => {
   const [collapsed, setCollapsed] = useState(false);
   const [showSubForm, setShowSubForm] = useState(false);
@@ -252,7 +257,11 @@ const TaskNodeView = ({
                 attachments
               });
             }
-            setEditing((v) => !v);
+            setEditing((v) => {
+              const newState = !v;
+              onEditModeChange?.(newState);
+              return newState;
+            });
           }}
         >
           {editing ? 'Save' : 'Edit'}
@@ -297,6 +306,7 @@ const TaskNodeView = ({
               onUpdate={onUpdate}
               selectedId={selectedId}
               planningIds={planningIds}
+              onEditModeChange={onEditModeChange}
             />
           ))}
         </div>

@@ -1,4 +1,4 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useState, useRef, useEffect } from 'react';
 import { Attachment, TaskNode } from '../types';
 import { randomId } from '../lib/task-utils';
 import { extractAttachment } from '../lib/file-extract';
@@ -19,8 +19,14 @@ const TaskForm = ({ onSubmit, parentId = null, onCancel, userId, balanceCents = 
   const [description, setDescription] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [attachError, setAttachError] = useState('');
+  const titleInputRef = useRef<HTMLInputElement>(null);
   
   const hasMinBalance = balanceCents >= 50;
+
+  useEffect(() => {
+    // Auto-focus title input when form mounts
+    titleInputRef.current?.focus();
+  }, []);
 
   const handleFiles = async (files: FileList | null) => {
     if (!files) return;
@@ -122,7 +128,7 @@ const TaskForm = ({ onSubmit, parentId = null, onCancel, userId, balanceCents = 
       <div className="form-row">
         <div>
           <label className="muted">Title</label>
-          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="What needs to get done?" />
+          <input ref={titleInputRef} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="What needs to get done?" />
         </div>
         <div>
           <label className="muted">Due date</label>

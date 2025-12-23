@@ -54,6 +54,7 @@ const App = () => {
   const [toppingUp, setToppingUp] = useState(false);
   const [serverVersion, setServerVersion] = useState<string | null>(null);
   const [authNotice, setAuthNotice] = useState('');
+  const [isEditingTask, setIsEditingTask] = useState(false); // Track if any task is in edit mode
   const navigate = useNavigate();
 
   const modelTiers = MODEL_TIERS;
@@ -171,8 +172,8 @@ const App = () => {
   useEffect(() => {
     if (!user || !hydrated) return;
     const interval = setInterval(async () => {
-      // Don't poll if user is actively working (prevents interrupting task creation or other modals)
-      if (showTaskModal || showInstructionModal || showTopUpModal || chatting) {
+      // Don't poll if user is actively working (prevents interrupting task editing, chat, or other modals)
+      if (showTaskModal || showInstructionModal || showTopUpModal || chatting || isEditingTask) {
         return;
       }
       try {
@@ -213,7 +214,7 @@ const App = () => {
       }
     }, 10000); // 10s poll
     return () => clearInterval(interval);
-  }, [user, hydrated, showTaskModal, showInstructionModal, showTopUpModal, chatting, defaultModel]);
+  }, [user, hydrated, showTaskModal, showInstructionModal, showTopUpModal, chatting, isEditingTask, defaultModel]);
 
   const handleAuthLogin = async (email: string, password: string, remember: boolean) => {
     const u = await login(email, password, remember);
@@ -560,6 +561,7 @@ const App = () => {
             onUpdate={handleUpdateTask}
             selectedId={selectedTaskId}
             planningIds={planningIds}
+            onEditModeChange={setIsEditingTask}
           />
         ) : (
           <SimpleListView
