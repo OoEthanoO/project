@@ -259,6 +259,19 @@ const TaskNodeView = ({
         <button className="subtle" onClick={() => onDelete(task.id)}>
           Delete
         </button>
+        {task.children?.some((c) => c.createdBy === 'ai') && (
+          <button
+            className="secondary"
+            onClick={(e) => {
+              e.stopPropagation();
+              const ok = window.confirm('Clear all AI-generated subtasks under this task?');
+              if (!ok) return;
+              onUpdate(task.id, { children: (task.children || []).filter((c) => c.createdBy !== 'ai') });
+            }}
+          >
+            Clear AI subtasks
+          </button>
+        )}
       </div>
       {showSubForm && (
         <div className="subtasks" style={{ marginTop: 12 }}>

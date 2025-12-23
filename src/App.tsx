@@ -437,6 +437,8 @@ const App = () => {
             onAddSubtask={handleAddTask}
             onSelect={setSelectedTaskId}
             onDelete={(id) => {
+              const ok = window.confirm('Delete this task and all of its subtasks?');
+              if (!ok) return;
               setTasks((prev) => removeTask(prev, id));
               if (selectedTaskId === id) setSelectedTaskId(null);
             }}

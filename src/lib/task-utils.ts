@@ -47,6 +47,14 @@ export const removeTask = (tasks: TaskNode[], id: string): TaskNode[] =>
     .filter((task) => task.id !== id)
     .map((task) => withChildren(task, removeTask(task.children || [], id)));
 
+export const removeAIGeneratedChildren = (tasks: TaskNode[], parentId: string): TaskNode[] =>
+  (tasks || []).map((task) => {
+    if (task.id === parentId) {
+      return { ...task, children: (task.children || []).filter((c) => c.createdBy !== 'ai') };
+    }
+    return withChildren(task, removeAIGeneratedChildren(task.children || [], parentId));
+  });
+
 export const reorderWithinParent = (
   tasks: TaskNode[],
   targetId: string,
