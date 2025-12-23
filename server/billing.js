@@ -1,10 +1,10 @@
 import { prisma } from './prisma.js';
 
 const clampCents = (amountCents) => {
-  const min = 100; // $1.00 minimum
+  const min = 1; // $0.01 minimum
   const max = 100_000_00; // $100,000 cap for safety
   if (!Number.isInteger(amountCents)) throw new Error('Amount must be an integer number of cents.');
-  if (amountCents < min) throw new Error('Minimum top-up is $1.00.');
+  if (amountCents < min) throw new Error('Minimum top-up is $0.01.');
   if (amountCents > max) throw new Error('Top-up exceeds safety cap.');
   return amountCents;
 };

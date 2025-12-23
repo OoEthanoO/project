@@ -24,7 +24,7 @@ const stripe = stripeSecret ? new Stripe(stripeSecret, { apiVersion: '2024-10-28
 export const createCheckoutSession = async ({ userId, amountCents, successPath = '/payment-success', cancelPath = '/' }) => {
   if (!stripe) throw new Error('Stripe is not configured. Add STRIPE_SECRET_KEY.');
   if (!userId) throw new Error('Missing userId');
-  if (!Number.isInteger(amountCents) || amountCents < 100) throw new Error('Minimum top-up is $1.00');
+  if (!Number.isInteger(amountCents) || amountCents < 1) throw new Error('Minimum top-up is $0.01');
 
   const successUrl = new URL(successPath, appBaseUrl).toString();
   const cancelUrl = new URL(cancelPath, appBaseUrl).toString();
