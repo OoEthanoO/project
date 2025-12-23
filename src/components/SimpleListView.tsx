@@ -103,6 +103,16 @@ const ListItem = ({
       {task.description && !editing && <p className="muted" style={{ margin: '8px 0 6px' }}>{task.description}</p>}
       {editing ? (
         <div style={{ margin: '8px 0 6px' }}>
+          <label className="muted">Description</label>
+          <textarea
+            placeholder="Description"
+            value={task.description || ''}
+            onChange={(e) => onUpdate(task.id, { description: e.target.value })}
+          />
+        </div>
+      ) : null}
+      {editing ? (
+        <div style={{ margin: '8px 0 6px' }}>
           <label className="muted">Attachments</label>
           <input
             type="file"
@@ -147,7 +157,12 @@ const ListItem = ({
           onClick={(e) => {
             e.stopPropagation();
             if (editing) {
-              onUpdate(task.id, { title: title.trim() || '(untitled)', dueDate: dueDate || undefined, startDate: startDate || undefined, attachments });
+              onUpdate(task.id, {
+                title: title.trim() || '(untitled)',
+                dueDate: dueDate || undefined,
+                startDate: startDate || undefined,
+                attachments
+              });
             }
             setEditing((v) => !v);
           }}
