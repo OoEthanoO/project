@@ -232,6 +232,33 @@ app.post('/api/payments/stripe/webhook', async (req, res) => {
   }
 });
 
+app.post('/api/upload-url', async (req, res) => {
+  try {
+    const { userId, fileName, contentType } = req.body;
+    if (!userId || !fileName || !contentType) {
+      return res.status(400).json({ error: 'Missing userId, fileName, or contentType' });
+    }
+    
+    // Check balance before issuing upload URL
+    const bal = await getBalance(userId);
+    if (bal < 50) {
+      return res.status(402).json({ error: 'Minimum balance of $0.50 required for file uploads' });
+    }
+    
+    // Import R2 helper
+    const { getPresignedUploadUrl } = await import('./r2.js');
+    
+    // Generate unique key and presigned URL
+    const key = `${userId}/${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const uploadUrl = await getPresignedUploadUrl(key, contentType);
+    
+    res.json({ uploadUrl, key });
+  } catch (err) {
+    console.error('Failed to generate upload URL', err);
+    res.status(500).json({ error: (err && err.message) || 'Failed to generate upload URL' });
+  }
+});
+
 const port = process.env.PORT || 8787;
 app.listen(port, () => {
   console.log(`API server listening on ${port}`);
