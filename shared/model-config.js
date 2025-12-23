@@ -45,6 +45,8 @@ export const isFreeModel = (modelId) => {
 export const supportsFiles = (modelId) => getModelById(modelId)?.multimodal ?? false;
 export const getPricing = (modelId) => getModelById(modelId)?.pricing ?? { in: 0, out: 0 };
 export const getTierIndex = (modelId) => MODEL_TIERS.findIndex((t) => t.id === modelId);
+export const isValidModel = (modelId) => MODEL_TIERS.some((t) => t.id === modelId);
+export const getValidModelOrDefault = (modelId) => isValidModel(modelId) ? modelId : getDefaultModel().id;
 
 // Create price map for backward compatibility
 export const priceMap = Object.fromEntries(

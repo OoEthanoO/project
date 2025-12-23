@@ -14,7 +14,7 @@ import { currentUser, login, logout, register } from './lib/auth';
 import { fetchState, saveState } from './lib/state';
 import { fetchBalance, topUp } from './lib/billing';
 import { createCheckoutSession } from './lib/payments';
-import { MODEL_TIERS, getDefaultModel } from '../shared/model-config.js';
+import { MODEL_TIERS, getDefaultModel, getValidModelOrDefault } from '../shared/model-config.js';
 
 const initialCoachMessage = () => ({
   id: randomId(),
@@ -91,7 +91,8 @@ const App = () => {
           return prev.length ? prev : chat.length ? chat : [initialCoachMessage()];
         });
         setGlobalInstruction(state.config?.globalInstruction || '');
-        setModelId(state.config?.modelId || import.meta.env.VITE_OPENAI_MODEL || defaultModel);
+        const loadedModelId = state.config?.modelId || import.meta.env.VITE_OPENAI_MODEL || defaultModel;
+        setModelId(getValidModelOrDefault(loadedModelId));
         setSelectedTaskId(state.selectedTaskId || null);
         try {
           const bal = await fetchBalance(user.id);
@@ -194,9 +195,10 @@ const App = () => {
         // Only update config if changed
         const newInstruction = state.config?.globalInstruction || '';
         const newModelId = state.config?.modelId || import.meta.env.VITE_OPENAI_MODEL || defaultModel;
+        const validatedModelId = getValidModelOrDefault(newModelId);
         const newSelectedId = state.selectedTaskId || null;
         setGlobalInstruction((prev) => prev === newInstruction ? prev : newInstruction);
-        setModelId((prev) => prev === newModelId ? prev : newModelId);
+        setModelId((prev) => prev === validatedModelId ? prev : validatedModelId);
         setSelectedTaskId((prev) => prev === newSelectedId ? prev : newSelectedId);
         try {
           const bal = await fetchBalance(user.id);
