@@ -3,6 +3,15 @@ import { prisma } from '../../server/prisma.js';
 import { sendJson, sendHtml } from '../_lib/http.js';
 import { logRequest } from '../_lib/log.js';
 
+const normalizeBaseUrl = (value) => {
+  if (!value) return 'http://localhost:5173';
+  const trimmed = value.trim();
+  const hasScheme = /^https?:\/\//i.test(trimmed);
+  if (hasScheme) return trimmed;
+  const isLocal = trimmed.startsWith('localhost') || trimmed.startsWith('127.') || trimmed.includes('://localhost');
+  return `${isLocal ? 'http' : 'https'}://${trimmed}`;
+};
+
 export default async function handler(req, res) {
   logRequest(req, res);
   if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
@@ -13,7 +22,7 @@ export default async function handler(req, res) {
     const user = await prisma.user.findFirst({ where: { verificationToken: token } });
     if (!user) return sendJson(res, 400, { error: 'Invalid token' });
     await prisma.user.update({ where: { id: user.id }, data: { emailVerified: true, verificationToken: null } });
-    const appUrl = process.env.APP_BASE_URL || 'http://localhost:5173';
+    const appUrl = normalizeBaseUrl(process.env.APP_BASE_URL || 'http://localhost:5173');
     const html = `
       <!doctype html>
       <html>

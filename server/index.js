@@ -8,6 +8,15 @@ import { getBalance, topUpBalance, chargeUsage } from './billing.js';
 import { createCheckoutSession, handleStripeWebhook } from './stripe.js';
 import { prisma } from './prisma.js';
 
+const normalizeBaseUrl = (value) => {
+  if (!value) return 'http://localhost:5173';
+  const trimmed = value.trim();
+  const hasScheme = /^https?:\/\//i.test(trimmed);
+  if (hasScheme) return trimmed;
+  const isLocal = trimmed.startsWith('localhost') || trimmed.startsWith('127.') || trimmed.includes('://localhost');
+  return `${isLocal ? 'http' : 'https'}://${trimmed}`;
+};
+
 const app = express();
 app.use('/api/payments/stripe/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json({ limit: '10mb' }));
@@ -111,7 +120,7 @@ app.get('/api/auth/verify', async (req, res) => {
       where: { id: user.id },
       data: { emailVerified: true, verificationToken: null }
     });
-    const appUrl = process.env.APP_BASE_URL || 'http://localhost:5173';
+    const appUrl = normalizeBaseUrl(process.env.APP_BASE_URL || 'http://localhost:5173');
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.send(`<!doctype html>
       <html>
