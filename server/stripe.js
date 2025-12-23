@@ -3,7 +3,21 @@ import { topUpBalance } from './billing.js';
 
 const stripeSecret = process.env.STRIPE_SECRET_KEY || '';
 const stripeWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET || '';
-const appBaseUrl = process.env.APP_BASE_URL || 'http://localhost:5173';
+const rawAppBaseUrl = process.env.APP_BASE_URL || 'http://localhost:5173';
+const makeBase = (value) => {
+  try {
+    // If the value lacks scheme, default to https:// for production-like hostnames, http:// for localhost
+    const trimmed = value.trim();
+    if (!/^https?:\/\//i.test(trimmed)) {
+      const isLocal = trimmed.startsWith('localhost') || trimmed.startsWith('127.') || trimmed.includes('://localhost');
+      return isLocal ? `http://${trimmed}` : `https://${trimmed}`;
+    }
+    return trimmed;
+  } catch {
+    return 'http://localhost:5173';
+  }
+};
+const appBaseUrl = makeBase(rawAppBaseUrl);
 
 const stripe = stripeSecret ? new Stripe(stripeSecret, { apiVersion: '2024-10-28.acacia' }) : null;
 
@@ -12,11 +26,14 @@ export const createCheckoutSession = async ({ userId, amountCents, successPath =
   if (!userId) throw new Error('Missing userId');
   if (!Number.isInteger(amountCents) || amountCents < 100) throw new Error('Minimum top-up is $1.00');
 
+  const successUrl = new URL(successPath, appBaseUrl).toString();
+  const cancelUrl = new URL(cancelPath, appBaseUrl).toString();
+
   const session = await stripe.checkout.sessions.create({
     mode: 'payment',
     payment_method_types: ['card'],
-    success_url: `${appBaseUrl}${successPath}?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${appBaseUrl}${cancelPath}`,
+    success_url: `${successUrl}?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: cancelUrl,
     line_items: [
       {
         price_data: {
