@@ -49,6 +49,7 @@ const App = () => {
   const [showTopUpModal, setShowTopUpModal] = useState(false);
   const [topUpAmount, setTopUpAmount] = useState('10'); // default $10
   const [toppingUp, setToppingUp] = useState(false);
+  const [serverVersion, setServerVersion] = useState<string | null>(null);
 
   const modelTiers = [
     {
@@ -142,6 +143,32 @@ const App = () => {
       setSelectedTaskId(tasks[0].id);
     }
   }, [tasks, selectedTaskId]);
+
+  // Reload if server version changes (detect new deploy)
+  useEffect(() => {
+    let cancelled = false;
+    const check = async () => {
+      try {
+        const res = await fetch('/api/version');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled) return;
+        if (serverVersion && data.version && data.version !== serverVersion) {
+          window.location.reload();
+          return;
+        }
+        setServerVersion(data.version || 'unknown');
+      } catch {
+        // ignore
+      }
+    };
+    check();
+    const id = setInterval(check, 30000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [serverVersion]);
 
   // Lightweight polling to stay in sync across devices/browsers
   useEffect(() => {
@@ -394,7 +421,6 @@ const App = () => {
               {stats.hasContext ? 'Context attached.' : 'Add descriptions or files for richer splits.'}
             </p>
           </div>
-          {planning && <span className="pill">Planning…</span>}
         </div>
         {activeTab === 'tree' ? (
           <TaskTree

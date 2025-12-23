@@ -33,7 +33,6 @@ export const generateSubtasks = async ({
     title: item.title,
     description: item.description || `Auto-planned from "${task.title}".`,
     dueDate: item.dueDate || task.dueDate,
-    startDate: task.startDate,
     attachments: [],
     children: [],
     parentId: task.id,

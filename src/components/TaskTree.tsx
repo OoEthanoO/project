@@ -29,6 +29,7 @@ const TaskTree = ({ tasks, onSplit, onAddSubtask, onSelect, onDelete, onUpdate, 
           onDelete={onDelete}
           onUpdate={onUpdate}
           selectedId={selectedId}
+          planning={false}
         />
       ))}
     </div>
@@ -56,7 +57,8 @@ const TaskNodeView = ({
   onSelect,
   onDelete,
   onUpdate,
-  selectedId
+  selectedId,
+  planning
 }: {
   task: TaskNode;
   depth: number;
@@ -66,6 +68,7 @@ const TaskNodeView = ({
   onDelete: (id: string) => void;
   selectedId?: string | null;
   onUpdate: (id: string, updates: Partial<TaskNode>) => void;
+  planning?: boolean;
 }) => {
   const [showSubForm, setShowSubForm] = useState(false);
   const selected = selectedId === task.id;
@@ -191,8 +194,13 @@ const TaskNodeView = ({
         <AttachmentList attachments={task.attachments} />
       )}
       <div className="task-actions">
-        <button className="primary" onClick={() => onSplit(task.id)} disabled={!canSplit || isDone} title={!canSplit ? 'Due today or overdue; adjust due date before splitting.' : undefined}>
-          AI split
+        <button
+          className="primary"
+          onClick={() => onSplit(task.id)}
+          disabled={!canSplit || isDone || planning}
+          title={!canSplit ? 'Due today or overdue; adjust due date before splitting.' : undefined}
+        >
+          {planning ? 'Planning…' : 'AI split'}
         </button>
         <button className="secondary" onClick={() => setShowSubForm((v) => !v)}>
           {showSubForm ? 'Close form' : 'Add subtask'}
