@@ -6,3 +6,5 @@ npm-debug.log*
 dist
 .vercel
 .env*.local
+# Ensure production env files stay out of commits
+.env.production

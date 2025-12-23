@@ -2,6 +2,8 @@ import 'dotenv/config';
 import { PrismaPg } from '@prisma/adapter-pg';
 import pkgPg from 'pg';
 import { execSync } from 'child_process';
+import { config as dotenvConfig } from 'dotenv';
+import fs from 'fs';
 
 let PrismaClient;
 try {
@@ -25,6 +27,17 @@ try {
 }
 
 const { Pool } = pkgPg;
+
+// If DATABASE_URL is missing, try loading from .env.production or .env
+if (!process.env.DATABASE_URL) {
+  const candidates = ['.env.production', '.env'];
+  for (const path of candidates) {
+    if (fs.existsSync(path)) {
+      dotenvConfig({ path });
+      break;
+    }
+  }
+}
 
 const url = process.env.DATABASE_URL;
 if (!url) {

@@ -19,6 +19,9 @@ const normalizeBaseUrl = (value) => {
 };
 
 const app = express();
+// Environment diagnostics (no secrets printed)
+console.log('[env] DATABASE_URL set:', !!process.env.DATABASE_URL);
+console.log('[env] APP_BASE_URL set:', !!process.env.APP_BASE_URL);
 app.use('/api/payments/stripe/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json({ limit: '10mb' }));
 app.use(cors());
