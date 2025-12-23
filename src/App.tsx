@@ -3,7 +3,6 @@ import TaskForm from './components/TaskForm';
 import TaskTree from './components/TaskTree';
 import SimpleListView from './components/SimpleListView';
 import ChatPanel from './components/ChatPanel';
-import AdminPanel from './components/AdminPanel';
 import { ChatMessage, TaskNode } from './types';
 import { addChild, findTask, randomId, removeTask, reorderWithinParent, updateTask } from './lib/task-utils';
 import { chatWithPlanner, generateSubtasks } from './lib/ai';
@@ -61,19 +60,19 @@ const App = () => {
       multimodal: false
     },
     {
-      id: 'openai/gpt-4o-mini',
+      id: 'google/gemini-2.5-flash-lite-preview-09-2025',
       label: 'Tier 1 — Budget multimodal',
       note: 'Budget multimodal; good default for using attachments without heavy spend.',
       multimodal: true
     },
     {
-      id: 'openai/gpt-4o',
+      id: 'openai/gpt-5-mini',
       label: 'Tier 2 — Strong multimodal',
       note: 'Stronger multimodal; better for complex tasks and mixed attachments.',
       multimodal: true
     },
     {
-      id: 'anthropic/claude-3.5-sonnet',
+      id: 'openai/gpt-5.1',
       label: 'Tier 3 — Premium multimodal',
       note: 'Premium multimodal; best for big attachments and deep breakdowns.',
       multimodal: true
@@ -103,7 +102,10 @@ const App = () => {
         if (cancelled) return;
         setTasks(state.tasks || []);
         const chat = state.chat || [];
-        setMessages(chat.length ? chat : [initialCoachMessage()]);
+        setMessages((prev) => {
+          if (chat.length >= prev.length) return chat.length ? chat : [initialCoachMessage()];
+          return prev.length ? prev : chat.length ? chat : [initialCoachMessage()];
+        });
         setGlobalInstruction(state.config?.globalInstruction || '');
         setModelId(state.config?.modelId || import.meta.env.VITE_OPENAI_MODEL || defaultModel);
         setSelectedTaskId(state.selectedTaskId || null);
@@ -180,7 +182,11 @@ const App = () => {
         const state = await fetchState(user.id);
         setTasks(state.tasks || []);
         const chat = state.chat || [];
-        setMessages(chat.length ? chat : [initialCoachMessage()]);
+        // Avoid overwriting with shorter/empty chat if the server didn't persist yet
+        setMessages((prev) => {
+          if (chat.length >= prev.length) return chat.length ? chat : [initialCoachMessage()];
+          return prev.length ? prev : chat.length ? chat : [initialCoachMessage()];
+        });
         setGlobalInstruction(state.config?.globalInstruction || '');
         setModelId(state.config?.modelId || import.meta.env.VITE_OPENAI_MODEL || defaultModel);
         setSelectedTaskId(state.selectedTaskId || null);
@@ -361,6 +367,22 @@ const App = () => {
     try {
       const aiMessage = await chatWithPlanner(text, tasks, globalInstruction, selectedTaskId, modelId, user.id);
       setMessages((prev) => [...prev, aiMessage]);
+      // Persist chat immediately to reduce chance of losing the last response
+      saveState(user.id, {
+        tasks,
+        chat: [...messages, userMsg, aiMessage],
+        config: { globalInstruction, modelId },
+        selectedTaskId
+      }).catch((err) => console.error('Failed to persist chat', err));
+    } catch (err) {
+      console.error('Chat failed', err);
+      const errorMsg: ChatMessage = {
+        id: randomId(),
+        role: 'ai',
+        content: `Sorry, I couldn't respond. ${err instanceof Error ? err.message : 'Please try again.'}`,
+        createdAt: new Date().toISOString()
+      };
+      setMessages((prev) => [...prev, errorMsg]);
     } finally {
       setChatting(false);
     }
@@ -368,11 +390,6 @@ const App = () => {
 
   if (!user) {
     return <AuthForm onLogin={handleAuthLogin} onRegister={handleAuthRegister} notice={authNotice} onClearNotice={() => setAuthNotice('')} />;
-  }
-
-  // Dedicated admin view (SPA route)
-  if (typeof window !== 'undefined' && window.location.pathname.startsWith('/admin')) {
-    return <AdminPanel user={user} />;
   }
 
   return (

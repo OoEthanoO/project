@@ -28,7 +28,7 @@ export default async function handler(req, res) {
         description: 'AI coach charge (non-refundable)'
       });
     }
-    return sendJson(res, 200, { content: result.content });
+    return sendJson(res, 200, { content: result.content, attachmentsUsed: result.attachmentsUsed || [] });
   } catch (err) {
     return sendJson(res, 500, { error: (err && err.message) || 'Unknown error' });
   }

@@ -38,10 +38,12 @@ export const chatWithPlanner = async (prompt, tasks, globalInstruction, selected
     }
     const data = await res.json();
     const content = data.content || '';
+    const attachmentsUsed = data.attachmentsUsed || [];
     return {
         id: randomId(),
         role: 'ai',
         content,
+        attachmentsUsed,
         createdAt: new Date().toISOString()
     };
 };

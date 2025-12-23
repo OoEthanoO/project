@@ -308,12 +308,15 @@ textarea {
   position: fixed;
   top: 24px;
   right: 24px;
+  bottom: 24px;
   width: min(420px, 90vw);
-  max-height: calc(100vh - 48px);
+  height: calc(100vh - 48px);
   overflow: hidden;
   transform: translateX(110%);
   transition: transform 0.3s ease;
   z-index: 20;
+  display: flex;
+  flex-direction: column;
 }
 
 .slideover.open .slideover-panel {
@@ -346,12 +349,32 @@ textarea {
 }
 
 .chat-feed {
+  flex: 1;
   padding: 0 24px 12px 24px;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  max-height: 520px;
   overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.chat-feed::-webkit-scrollbar {
+  width: 6px;
+}
+
+.chat-feed::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chat-feed::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+.chat-feed::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
 }
 
 .chat-bubble {
@@ -362,7 +385,7 @@ textarea {
 }
 
 .chat-bubble.user {
-  background: linear-gradient(135deg, rgba(142, 125, 243, 0.3), rgba(125, 243, 225, 0.35));
+  background: linear-gradient(135deg, rgba(142, 125, 243), rgba(125, 243, 225));
   align-self: flex-end;
   color: #0c1b1c;
   font-weight: 600;
@@ -375,11 +398,54 @@ textarea {
   align-self: flex-start;
 }
 
+.chat-bubble.thinking {
+  padding: 16px 20px;
+}
+
+.thinking-dots {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+}
+
+.thinking-dots span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: thinking 1.4s infinite ease-in-out;
+}
+
+.thinking-dots span:nth-child(1) {
+  animation-delay: 0s;
+}
+
+.thinking-dots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.thinking-dots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes thinking {
+  0%, 60%, 100% {
+    opacity: 0.25;
+    transform: scale(0.8);
+  }
+  30% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+
 .chat-input {
   padding: 16px 24px 20px 24px;
   border-top: 1px solid var(--border);
   background: rgba(0, 0, 0, 0.12);
   border-radius: 0 0 18px 18px;
+  flex-shrink: 0;
 }
 
 .chat-form {

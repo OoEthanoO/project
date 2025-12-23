@@ -31,14 +31,25 @@ const callAuth = async (path, payload) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
     });
-    if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || 'Auth failed');
+    const text = await res.text();
+    let data = {};
+    try {
+        data = text ? JSON.parse(text) : {};
+    } catch {
+        // ignore parse error
     }
-    return res.json();
+    if (!res.ok) {
+        const msg = data?.error || data?.message || text || 'Auth failed';
+        throw new Error(msg);
+    }
+    return data;
 };
 export const register = async (email, password, name, remember) => {
     const user = await callAuth('/register', { email, password, name });
+    // Do not log in until verified
+    if (!user.emailVerified) {
+        throw new Error('Verification email sent. Please check your inbox before signing in.');
+    }
     saveSession({ token: user.token, user }, remember);
     return user;
 };

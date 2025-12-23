@@ -28,6 +28,12 @@ export const replaceChildren = (tasks, parentId, newChildren) => (tasks || []).m
 export const removeTask = (tasks, id) => (tasks || [])
     .filter((task) => task.id !== id)
     .map((task) => withChildren(task, removeTask(task.children || [], id)));
+export const removeAIGeneratedChildren = (tasks, parentId) => (tasks || []).map((task) => {
+    if (task.id === parentId) {
+        return { ...task, children: (task.children || []).filter((c) => c.createdBy !== 'ai') };
+    }
+    return withChildren(task, removeAIGeneratedChildren(task.children || [], parentId));
+});
 export const reorderWithinParent = (tasks, targetId, direction) => {
     const move = (list) => {
         const idx = list.findIndex((t) => t.id === targetId);

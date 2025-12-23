@@ -29,6 +29,7 @@ export type ChatMessage = {
   role: 'user' | 'ai';
   content: string;
   createdAt?: string;
+  attachmentsUsed?: string[];
 };
 
 export type PlannerConfig = {

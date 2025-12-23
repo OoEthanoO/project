@@ -26,13 +26,21 @@ const TaskForm = ({ onSubmit, parentId = null, onCancel }: Props) => {
       return !allowed.includes(ext);
     });
     if (disallowed.length) {
-      setAttachError('Only PDF or image files (jpg, jpeg, png, webp, gif) are supported. Please convert other files to PDF.');
+      setAttachError(
+        'Only PDF or image files (jpg, jpeg, png, webp, gif) are supported. Convert other files to PDF or attach via URL.'
+      );
       return;
     }
     setAttachError('');
+    const tooLarge = incoming.filter((f) => f.size > 10 * 1024 * 1024);
+    if (tooLarge.length) {
+      setAttachError('Files must be 10 MB or smaller. Please compress or split the PDF.');
+      return;
+    }
     const extracted = await Promise.all(incoming.map((file) => extractAttachment(file)));
-    setAttachments((prev) => [...prev, ...extracted]);
+    setAttachments((prev) => [...prev, ...extracted as Attachment[]]);
   };
+
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -115,7 +123,7 @@ const TaskForm = ({ onSubmit, parentId = null, onCancel }: Props) => {
           onChange={(e) => handleFiles(e.target.files)}
         />
         <p className="muted" style={{ fontSize: 12, margin: '4px 0' }}>
-          Supported: PDF, JPG, JPEG, PNG, WEBP, GIF. Convert other files (e.g., DOCX/PPTX) to PDF before attaching.
+          Supported: PDF, JPG, JPEG, PNG, WEBP, GIF. Maximum 10 MB per file. Convert other files (e.g., DOCX/PPTX) to PDF before attaching.
         </p>
         {attachError && (
           <p className="muted" style={{ color: '#f88', marginTop: 4 }}>

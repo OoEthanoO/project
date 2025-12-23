@@ -31,9 +31,20 @@ const parseJsonContent = (raw) => {
 
 const priceMap = {
   'meta-llama/llama-3.3-70b-instruct:free': { in: 0, out: 0 },
-  'openai/gpt-4o-mini': { in: 0.15, out: 0.6 },
-  'openai/gpt-4o': { in: 2.5, out: 10 },
-  'anthropic/claude-3.5-sonnet': { in: 6, out: 30 }
+  'google/gemini-2.5-flash-lite-preview-09-2025': { in: 0.1, out: 0.4 },
+  'openai/gpt-5-mini': { in: 0.25, out: 2 },
+  'openai/gpt-5.1': { in: 1.25, out: 10 }
+};
+
+const summarizeAttachments = (attachments = [], maxItems = 3, maxChars = 800) => {
+  return attachments
+    .slice(0, maxItems)
+    .map((a) => {
+      const name = a.name || a.type || 'file';
+      const body = (a.content || '').slice(0, maxChars);
+      return `${name}:\n${body}`;
+    })
+    .join('\n---\n');
 };
 
 const callOpenRouter = async ({ messages, modelId, plugins }) => {
@@ -126,11 +137,11 @@ export const generateSubtasks = async ({ task, conversation = [], globalInstruct
     'Avoid assigning a subtask due on the same day you set it (or on the start date) unless absolutely necessary, because the start of that day has already passed.',
     'Balance the workload across the available days; do not frontload or backload. If work is in units (pages/chapters/problems), distribute units evenly so daily effort is consistent.',
     'Do NOT emit or invent a startDate for subtasks; only use dueDate when needed.',
-    modelId === 'anthropic/claude-3.5-sonnet'
+    modelId === 'openai/gpt-5.1'
       ? 'Use deep reasoning: anticipate risks, add QA/validation steps, and suggest buffers.'
-      : modelId === 'openai/gpt-4o'
+      : modelId === 'openai/gpt-5-mini'
         ? 'Aim for thorough but concise breakdowns that handle complex constraints.'
-        : modelId === 'openai/gpt-4o-mini'
+        : modelId === 'google/gemini-2.5-flash-lite-preview-09-2025'
           ? 'Balance cost and quality; keep steps focused and leverage attachments when useful.'
           : 'Text-only mode: ignore attachments; rely on titles/descriptions.',
     'Respond ONLY as JSON with shape: {"items":[{"title":"...", "description":"...", "dueDate":"YYYY-MM-DD" | null}]}',
@@ -166,9 +177,6 @@ export const generateSubtasks = async ({ task, conversation = [], globalInstruct
         ? [
             {
               id: 'file-parser',
-              pdf: {
-                engine: 'pdf-text'
-              }
             }
           ]
         : undefined
@@ -217,11 +225,13 @@ export const chatWithPlanner = async ({ prompt, tasks, globalInstruction, select
     .join(' | ');
 
   const system = [
-    'You are a concise planning and study coach.',
-    'Act stepwise: first skim provided task list, then decide which attachments to inspect. Only inspect requested files.',
-    'Reference tasks by name, tighten scope, propose pacing, and suggest reschedules when needed.',
-    'Use attached files (images/PDFs/files) to infer missing task names when titles are generic, but only after explicitly requesting them.',
-    'Respond in plain paragraphs (no bullets/lists/markdown), clear English sentences only; avoid gibberish or random characters.',
+    'You are a helpful planning and study coach.',
+    'CRITICAL: Detect the user\'s intent from their message:',
+    '- Casual greetings/small talk ("hello", "hi", "hey", "how are you"): Respond warmly in 1-2 sentences. Do NOT analyze tasks, propose plans, or mention due dates.',
+    '- Simple factual questions: Provide JUST the answer, no analysis.',
+    '- Planning requests ("help me plan", "what should I do", "suggest a schedule"): Then provide detailed task analysis and suggestions.',
+    'Only inspect attachments when the user explicitly needs information from files.',
+    'Respond in plain paragraphs, clear English sentences only. Be conversational and match the user\'s tone.',
     globalInstruction ? `Global instruction: ${globalInstruction}` : ''
   ]
     .filter(Boolean)
@@ -240,11 +250,12 @@ export const chatWithPlanner = async ({ prompt, tasks, globalInstruction, select
           ? `Focused task: ${focused.title || '(untitled)'}${focused.dueDate ? ` (due ${focused.dueDate})` : ''}`
           : 'Focused task: none selected.',
         allAttachments.length
-          ? `Attachments available (names only): ${allAttachments
-              .map((a) => `${a.name || a.type || 'file'} in ${a.parentTitle}`)
+          ? `Attachments available: ${allAttachments
+              .map((a) => `"${a.name || a.type || 'file'}" (in ${a.parentTitle})`)
               .join(', ')}`
           : 'No attachments available.',
-        'Select up to 3 attachments to open by filename. Respond ONLY as JSON: {"files":["filename1","filename2"]}. If none needed, return an empty array.',
+        'IMPORTANT: Only select files if the user needs specific information from them. For greetings or casual messages, return empty array.',
+        'Select attachments by EXACT filename. Respond with ONLY valid JSON: {"files":["exact_filename1.pdf","exact_filename2.pdf"]} or {"files":[]} if none needed.',
         `User request: ${prompt}`
       ]
         .filter(Boolean)
@@ -263,19 +274,27 @@ export const chatWithPlanner = async ({ prompt, tasks, globalInstruction, select
         modelId
       });
       const parsed = parseJsonContent(selection.content);
+      console.log('[ai/chat] file selection response:', selection.content);
       if (Array.isArray(parsed?.files)) {
         requestedFiles = parsed.files.slice(0, 3);
+        console.log('[ai/chat] requested files:', requestedFiles);
       }
-    } catch {
+    } catch (err) {
+      console.warn('[ai/chat] file selection failed:', err.message);
       requestedFiles = [];
     }
   }
 
   const allowedFiles = supportsFiles
-    ? allAttachments.filter(
-        (a) => requestedFiles.some((name) => (a.name || '').toLowerCase() === (name || '').toLowerCase()) && a.dataUrl
-      )
+    ? allAttachments.filter((a) => {
+        const nameMatch = requestedFiles.some((name) => (a.name || '').toLowerCase() === (name || '').toLowerCase());
+        const hasContent = a.dataUrl && (a.dataUrl.startsWith('data:image') || a.dataUrl.startsWith('data:application/pdf'));
+        return nameMatch && hasContent;
+      })
     : [];
+  
+  console.log('[ai/chat] allowedFiles:', allowedFiles.map(a => a.name || 'unnamed'));
+  
   const imageParts =
     allowedFiles
       .filter((a) => a.dataUrl && a.dataUrl.startsWith('data:image'))
@@ -292,12 +311,6 @@ export const chatWithPlanner = async ({ prompt, tasks, globalInstruction, select
           file_data: a.dataUrl
         }
       })) || [];
-  const attachmentSummary = summarizeAttachments(
-    allAttachments.filter((a) => requestedFiles.includes(a.name || '') && a.extractionStatus === 'ok'),
-    3,
-    800
-  );
-
   const userContent = [
     {
       type: 'text',
@@ -305,7 +318,6 @@ export const chatWithPlanner = async ({ prompt, tasks, globalInstruction, select
         `Today: ${formatDate(now)}`,
         horizon ? `Open items: ${horizon}` : 'No tasks yet.',
         taskLines.length ? `Task context:\n${taskLines.join('\n')}` : '',
-        attachmentSummary ? `Attachment excerpts (text files only, opened on request):\n${attachmentSummary}` : '',
         focused
           ? `Focused task: ${focused.title || '(untitled)'}${focused.dueDate ? ` (due ${focused.dueDate})` : ''}`
           : 'Focused task: none selected.',
@@ -328,18 +340,25 @@ export const chatWithPlanner = async ({ prompt, tasks, globalInstruction, select
       { role: 'user', content: userContent }
     ],
     modelId,
-    plugins:
-      supportsFiles && pdfParts.length > 0
-        ? [
-            {
-              id: 'file-parser',
-              pdf: {
-                engine: 'pdf-text'
-              }
-            }
-          ]
-        : undefined
+    plugins: supportsFiles && pdfParts.length > 0 ? [{ id: 'file-parser' }] : undefined
   });
 
-  return { content, usage, modelUsed, totalCostUsd };
+  // Track files that were explicitly opened
+  const explicitFiles = allowedFiles.map((a) => a.name || a.type || 'file');
+  
+  // Also detect files mentioned in the response as a fallback
+  const mentionedFiles = allAttachments
+    .filter((a) => {
+      const name = a.name || '';
+      return name && content.includes(name);
+    })
+    .map((a) => a.name || a.type || 'file');
+  
+  // Combine and deduplicate
+  const attachmentsUsed = [...new Set([...explicitFiles, ...mentionedFiles])];
+  
+  console.log('[ai/chat] explicitly opened files:', explicitFiles);
+  console.log('[ai/chat] files mentioned in response:', mentionedFiles);
+  console.log('[ai/chat] returning attachmentsUsed:', attachmentsUsed);
+  return { content, usage, modelUsed, totalCostUsd, attachmentsUsed };
 };

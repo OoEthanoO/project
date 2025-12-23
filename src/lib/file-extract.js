@@ -12,8 +12,8 @@ const TEXT_TYPES = [
 const UTF8_DECODER = new TextDecoder('utf-8', { fatal: false });
 const fileIsTextual = (type) => TEXT_TYPES.includes(type) || type.startsWith('text/') || type.endsWith('+json') || type.endsWith('+xml');
 const MAX_INLINE_BYTES = 200000; // 200 KB to avoid localStorage blowups
-const MAX_IMAGE_BYTES = 2000000; // 2 MB for base64 images
-const MAX_PDF_BYTES = 4000000; // 4 MB for PDF base64
+const MAX_IMAGE_BYTES = 10000000; // 10 MB limit for images
+const MAX_PDF_BYTES = 10000000; // 10 MB limit for PDFs
 const readFileAsText = async (file) => {
     if (typeof file.text === 'function') {
         return file.text();
