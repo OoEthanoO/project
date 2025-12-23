@@ -24,7 +24,24 @@ console.log('[env] DATABASE_URL set:', !!process.env.DATABASE_URL);
 console.log('[env] APP_BASE_URL set:', !!process.env.APP_BASE_URL);
 app.use('/api/payments/stripe/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json({ limit: '10mb' }));
-app.use(cors());
+
+// Robust CORS: allow frontend origin and handle preflight
+const allowedOrigin = normalizeBaseUrl(process.env.APP_BASE_URL || 'http://localhost:5173');
+app.use(cors({
+  origin: (origin, cb) => {
+    // Allow no-origin requests (e.g., curl) and the configured frontend
+    if (!origin) return cb(null, true);
+    try {
+      const allowed = allowedOrigin === '*' || origin === allowedOrigin;
+      return cb(null, allowed);
+    } catch {
+      return cb(null, false);
+    }
+  },
+  methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'x-admin-key', 'x-admin-email']
+}));
+app.options('*', cors());
 
 // Simple request logger
 app.use((req, res, next) => {
@@ -183,6 +200,24 @@ app.post('/api/state', async (req, res) => {
   }
 });
 
+app.delete('/api/state', async (req, res) => {
+  try {
+    const { keys } = req.body;
+    if (!keys || !Array.isArray(keys) || keys.length === 0) {
+      return res.status(400).json({ error: 'Missing or invalid keys array' });
+    }
+    
+    // Import R2 helper and delete files
+    const { deleteMultipleFromR2 } = await import('./r2.js');
+    await deleteMultipleFromR2(keys);
+    
+    res.json({ deleted: keys.length });
+  } catch (err) {
+    console.error('Failed to delete files', err);
+    res.status(500).json({ error: (err && err.message) || 'Failed to delete files' });
+  }
+});
+
 app.get('/api/billing/balance', async (req, res) => {
   try {
     const userId = req.query.userId;
@@ -256,6 +291,64 @@ app.post('/api/upload-url', async (req, res) => {
   } catch (err) {
     console.error('Failed to generate upload URL', err);
     res.status(500).json({ error: (err && err.message) || 'Failed to generate upload URL' });
+  }
+});
+
+app.get('/api/admin/summary', async (req, res) => {
+  try {
+    const apiKey = req.headers['x-admin-key'];
+    const adminEmail = req.headers['x-admin-email'];
+    
+    if (!apiKey || !adminEmail) {
+      return res.status(401).json({ error: 'Missing admin credentials' });
+    }
+    
+    // Validate admin API key
+    if (apiKey !== process.env.ADMIN_API_KEY || adminEmail !== process.env.ADMIN_EMAIL) {
+      return res.status(403).json({ error: 'Invalid admin credentials' });
+    }
+    
+    // Fetch summary data
+    const userCount = await prisma.user.count();
+    const totalBalance = await prisma.user.aggregate({
+      _sum: { balanceCents: true }
+    });
+    
+    const topBalances = await prisma.user.findMany({
+      select: { id: true, email: true, name: true, balanceCents: true, createdAt: true },
+      orderBy: { balanceCents: 'desc' },
+      take: 10
+    });
+    
+    const topups = await prisma.topup.aggregate({
+      _count: true,
+      _sum: { amountCents: true }
+    });
+    
+    const usages = await prisma.usageCharge.aggregate({
+      _count: true,
+      _sum: { amountCents: true }
+    });
+    
+    const recentTopups = await prisma.topup.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 5
+    });
+    
+    res.json({
+      adminEmail: process.env.ADMIN_EMAIL,
+      userCount,
+      totalBalanceCents: totalBalance._sum.balanceCents || 0,
+      topBalances,
+      topupCount: topups._count,
+      topupSumCents: topups._sum.amountCents || 0,
+      usageCount: usages._count,
+      usageSumCents: usages._sum.amountCents || 0,
+      recentTopups
+    });
+  } catch (err) {
+    console.error('Failed to fetch admin summary', err);
+    res.status(500).json({ error: (err && err.message) || 'Failed to fetch admin summary' });
   }
 });
 
