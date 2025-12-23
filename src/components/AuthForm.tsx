@@ -3,9 +3,11 @@ import { FormEvent, useState } from 'react';
 type Props = {
   onLogin: (email: string, password: string, remember: boolean) => Promise<void> | void;
   onRegister: (email: string, password: string, name: string, remember: boolean) => Promise<void> | void;
+  notice?: string;
+  onClearNotice?: () => void;
 };
 
-const AuthForm = ({ onLogin, onRegister }: Props) => {
+const AuthForm = ({ onLogin, onRegister, notice, onClearNotice }: Props) => {
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
@@ -18,6 +20,7 @@ const AuthForm = ({ onLogin, onRegister }: Props) => {
     e.preventDefault();
     setError('');
     setInfo('');
+    onClearNotice?.();
     if (!email.trim() || !password.trim()) {
       setError('Email and password required');
       return;
@@ -55,6 +58,11 @@ const AuthForm = ({ onLogin, onRegister }: Props) => {
         </div>
       </div>
       <form className="task-card" onSubmit={handleSubmit} style={{ borderStyle: 'dashed' }}>
+        {notice && (
+          <div className="muted" style={{ color: '#5bd0ff', marginBottom: 10, fontWeight: 600 }}>
+            {notice}
+          </div>
+        )}
         <div className="form-row">
           <div>
             <label className="muted">Email</label>
@@ -98,6 +106,7 @@ const AuthForm = ({ onLogin, onRegister }: Props) => {
               setMode((m) => (m === 'login' ? 'register' : 'login'));
               setError('');
               setInfo('');
+              onClearNotice?.();
             }}
           >
             {mode === 'login' ? 'Need an account?' : 'Have an account?'}

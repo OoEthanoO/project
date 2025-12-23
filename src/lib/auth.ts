@@ -34,11 +34,18 @@ const callAuth = async (path: '/register' | '/login', payload: any): Promise<Acc
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
   });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || 'Auth failed');
+  const text = await res.text();
+  let data: any = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    // ignore parse error
   }
-  return res.json();
+  if (!res.ok) {
+    const msg = data?.error || data?.message || text || 'Auth failed';
+    throw new Error(msg);
+  }
+  return data as AccountUser;
 };
 
 export const register = async (email: string, password: string, name: string, remember: boolean): Promise<AccountUser> => {

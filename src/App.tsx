@@ -50,6 +50,7 @@ const App = () => {
   const [topUpAmount, setTopUpAmount] = useState('10'); // default $10
   const [toppingUp, setToppingUp] = useState(false);
   const [serverVersion, setServerVersion] = useState<string | null>(null);
+  const [authNotice, setAuthNotice] = useState('');
 
   const modelTiers = [
     {
@@ -199,19 +200,31 @@ const App = () => {
     const u = await login(email, password, remember);
     setUser(u);
     setBalanceCents(u.balanceCents || 0);
+    setAuthNotice('');
   };
 
   const handleAuthRegister = async (email: string, password: string, name: string, remember: boolean) => {
     const u = await register(email, password, name, remember);
     setUser(u);
     setBalanceCents(u.balanceCents || 0);
+    setAuthNotice('');
   };
 
   const handleLogout = () => {
     logout();
     setUser(null);
     setBalanceCents(0);
+    setAuthNotice('');
   };
+
+  // Auto-log-out any unverified session restored from storage
+  useEffect(() => {
+    if (user && user.emailVerified === false) {
+      console.warn('[auth] user is not verified; logging out');
+      handleLogout();
+      setAuthNotice('Please verify your email from your inbox, then sign in.');
+    }
+  }, [user]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -353,7 +366,7 @@ const App = () => {
   };
 
   if (!user) {
-    return <AuthForm onLogin={handleAuthLogin} onRegister={handleAuthRegister} />;
+    return <AuthForm onLogin={handleAuthLogin} onRegister={handleAuthRegister} notice={authNotice} onClearNotice={() => setAuthNotice('')} />;
   }
 
   return (
