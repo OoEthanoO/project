@@ -26,9 +26,9 @@ Turn assignments, exams, and projects into day-by-day plans. Add tasks with due 
 - Create a `.env` (Vercel functions read these; the client does not call OpenRouter directly):
   ```bash
   OPENROUTER_API_KEY=sk-...
-  OPENROUTER_MODEL=gpt-4o-mini # optional, defaults to gpt-4o-mini
   # OPENROUTER_BASE_URL=https://openrouter.ai/api/v1/chat/completions # override if needed
   ```
+- The model defaults to Tier 0 (free text-only model). Users can change models in the UI dropdown.
 - Run with `vercel dev` as shown above; `/api/ai/*` calls go to the serverless functions, which forward to OpenRouter with your key.
 - Attachments are stored as metadata for planning context; wire a backend if you need file persistence.
 - No tests included yet; run `npm run lint` once dependencies are installed to type-check the project.

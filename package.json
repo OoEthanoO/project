@@ -14,26 +14,27 @@
     "postinstall": "prisma generate"
   },
   "dependencies": {
+    "@prisma/adapter-pg": "^7.2.0",
     "@prisma/client": "^7.2.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
     "jszip": "^3.10.1",
     "mammoth": "^1.6.0",
+    "node-fetch": "^3.3.2",
     "pdfjs-dist": "^4.6.82",
+    "pg": "^8.13.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "express": "^4.19.2",
-    "cors": "^2.8.5",
-    "node-fetch": "^3.3.2",
-    "dotenv": "^16.4.5",
-    "@prisma/adapter-pg": "^7.2.0",
-    "pg": "^8.13.1",
-    "stripe": "^14.11.0",
-    "resend": "^3.4.0"
+    "react-router-dom": "^7.11.0",
+    "resend": "^3.4.0",
+    "stripe": "^14.11.0"
   },
   "devDependencies": {
-    "prisma": "^7.2.0",
     "@types/react": "^18.3.10",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.2",
+    "prisma": "^7.2.0",
     "typescript": "^5.6.3",
     "vite": "^5.4.8"
   }

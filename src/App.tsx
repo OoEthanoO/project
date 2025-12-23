@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react';
+import { Routes, Route, useNavigate } from 'react-router-dom';
 import TaskForm from './components/TaskForm';
 import TaskTree from './components/TaskTree';
 import SimpleListView from './components/SimpleListView';
 import ChatPanel from './components/ChatPanel';
+import AdminPanel from './components/AdminPanel';
 import { ChatMessage, TaskNode } from './types';
 import { addChild, findTask, randomId, removeTask, reorderWithinParent, updateTask } from './lib/task-utils';
 import { chatWithPlanner, generateSubtasks } from './lib/ai';
@@ -51,6 +53,7 @@ const App = () => {
   const [toppingUp, setToppingUp] = useState(false);
   const [serverVersion, setServerVersion] = useState<string | null>(null);
   const [authNotice, setAuthNotice] = useState('');
+  const navigate = useNavigate();
 
   const modelTiers = [
     {
@@ -80,7 +83,7 @@ const App = () => {
   ];
   const [globalInstruction, setGlobalInstruction] = useState('');
   const defaultModel = modelTiers[0]?.id || 'meta-llama/llama-3.3-70b-instruct:free';
-  const [modelId, setModelId] = useState(() => import.meta.env.VITE_OPENAI_MODEL || defaultModel);
+  const [modelId, setModelId] = useState(defaultModel);
   const modelDesc =
     modelTiers.find((t) => t.id === modelId)?.note ||
     'Pick a model tier. Paid tiers handle attachments; Tier 0 is text-only.';
@@ -93,7 +96,7 @@ const App = () => {
         setTasks([]);
         setMessages([initialCoachMessage()]);
         setGlobalInstruction('');
-        setModelId(import.meta.env.VITE_OPENAI_MODEL || 'gpt-4o-mini');
+        setModelId(defaultModel);
         setSelectedTaskId(null);
         return;
       }
@@ -392,7 +395,7 @@ const App = () => {
     return <AuthForm onLogin={handleAuthLogin} onRegister={handleAuthRegister} notice={authNotice} onClearNotice={() => setAuthNotice('')} />;
   }
 
-  return (
+  const MainPlanner = () => (
     <div className="app-shell">
       <div className="panel">
         <div className="header">
@@ -429,6 +432,9 @@ const App = () => {
             </div>
             <button className="secondary" onClick={handleLogout} title="Log out of this account">
               Logout
+            </button>
+            <button className="secondary" onClick={() => navigate('/admin')} title="Admin dashboard">
+              Admin
             </button>
           </div>
         </div>
@@ -594,6 +600,13 @@ const App = () => {
         </div>
       )}
     </div>
+  );
+
+  return (
+    <Routes>
+      <Route path="/" element={<MainPlanner />} />
+      <Route path="/admin" element={<AdminPanel user={user} />} />
+    </Routes>
   );
 };
 

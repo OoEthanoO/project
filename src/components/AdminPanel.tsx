@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AccountUser } from '../types';
 
 type AdminSummary = {
@@ -20,6 +21,7 @@ const AdminPanel = ({ user }: { user: AccountUser | null }) => {
   const [summary, setSummary] = useState<AdminSummary | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
 
   const isAdminUser = !!user;
 
@@ -83,6 +85,9 @@ const AdminPanel = ({ user }: { user: AccountUser | null }) => {
           <p className="muted">Secure view of balances and recent activity.</p>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button className="secondary" onClick={() => navigate('/')}>
+            ← Back to planner
+          </button>
           <input
             type="password"
             value={apiKey}

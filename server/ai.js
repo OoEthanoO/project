@@ -3,7 +3,6 @@ import fetch from 'node-fetch';
 const formatDate = (date) => date.toISOString().split('T')[0];
 
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY;
-const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'gpt-4o-mini';
 const OPENROUTER_BASE_URL = process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1/chat/completions';
 
 const ensureKey = () => {
@@ -58,7 +57,7 @@ const callOpenRouter = async ({ messages, modelId, plugins }) => {
       'X-Title': 'YanPlanner'
     },
     body: JSON.stringify({
-      model: modelId || OPENROUTER_MODEL,
+      model: modelId,
       messages,
       temperature: 0.2,
       plugins
@@ -72,7 +71,7 @@ const callOpenRouter = async ({ messages, modelId, plugins }) => {
   const content = data?.choices?.[0]?.message?.content;
   if (!content) throw new Error('OpenRouter returned empty content.');
   const usage = data?.usage || {};
-  const modelUsed = data?.model || modelId || OPENROUTER_MODEL;
+  const modelUsed = data?.model || modelId;
 
   const pricing = priceMap[modelUsed] || { in: 0, out: 0 };
   const promptTokens = usage.prompt_tokens || 0;
