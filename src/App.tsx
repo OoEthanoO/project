@@ -193,19 +193,33 @@ const App = () => {
       }
       try {
         const state = await fetchState(user.id);
-        setTasks(state.tasks || []);
+        // Only update tasks if they actually changed
+        setTasks((prev) => {
+          const newTasks = state.tasks || [];
+          if (JSON.stringify(prev) === JSON.stringify(newTasks)) return prev;
+          return newTasks;
+        });
         const chat = state.chat || [];
         // Avoid overwriting with shorter/empty chat if the server didn't persist yet
         setMessages((prev) => {
-          if (chat.length >= prev.length) return chat.length ? chat : [initialCoachMessage()];
-          return prev.length ? prev : chat.length ? chat : [initialCoachMessage()];
+          if (chat.length >= prev.length) {
+            const newChat = chat.length ? chat : [initialCoachMessage()];
+            if (JSON.stringify(prev) === JSON.stringify(newChat)) return prev;
+            return newChat;
+          }
+          const fallback = prev.length ? prev : chat.length ? chat : [initialCoachMessage()];
+          return fallback;
         });
-        setGlobalInstruction(state.config?.globalInstruction || '');
-        setModelId(state.config?.modelId || import.meta.env.VITE_OPENAI_MODEL || defaultModel);
-        setSelectedTaskId(state.selectedTaskId || null);
+        // Only update config if changed
+        const newInstruction = state.config?.globalInstruction || '';
+        const newModelId = state.config?.modelId || import.meta.env.VITE_OPENAI_MODEL || defaultModel;
+        const newSelectedId = state.selectedTaskId || null;
+        setGlobalInstruction((prev) => prev === newInstruction ? prev : newInstruction);
+        setModelId((prev) => prev === newModelId ? prev : newModelId);
+        setSelectedTaskId((prev) => prev === newSelectedId ? prev : newSelectedId);
         try {
           const bal = await fetchBalance(user.id);
-          setBalanceCents(bal);
+          setBalanceCents((prev) => prev === bal ? prev : bal);
         } catch (e) {
           console.error('Polling: failed to refresh balance', e);
         }
