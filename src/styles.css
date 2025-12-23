@@ -98,7 +98,7 @@ body {
   border-radius: 14px;
   padding: 14px 16px;
   background: rgba(255, 255, 255, 0.01);
-  transition: border 0.2s ease, transform 0.2s ease;
+  transition: border 0.2s ease, transform 0.2s ease, opacity 0.2s ease;
 }
 
 .task-card:hover {
@@ -121,6 +121,13 @@ body {
 .task-title {
   font-size: 18px;
   margin: 0;
+  transition: opacity 0.2s ease;
+}
+
+.task-title.task-done {
+  text-decoration: line-through;
+  opacity: 0.6;
+  color: var(--muted);
 }
 
 .task-meta {
@@ -259,6 +266,36 @@ textarea {
   font-size: 12px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   color: var(--muted);
+  background: rgba(255, 255, 255, 0.03);
+  transition: all 0.2s ease;
+}
+
+.badge-status {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.badge-status:hover {
+  transform: translateY(-1px) scale(1.05);
+  box-shadow: 0 4px 12px rgba(125, 243, 225, 0.2);
+}
+
+.badge-status.status-open {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: var(--text);
+}
+
+.badge-status.status-in-progress {
+  background: rgba(255, 200, 100, 0.15);
+  border-color: rgba(255, 200, 100, 0.6);
+  color: #ffb347;
+}
+
+.badge-status.status-done {
+  background: rgba(125, 243, 225, 0.15);
+  border-color: rgba(125, 243, 225, 0.6);
+  color: var(--accent);
 }
 
 .badge-ai {

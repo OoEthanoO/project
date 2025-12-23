@@ -158,12 +158,23 @@ const TaskNodeView = ({
               </div>
             </>
           ) : (
-            <p className="task-title">{task.title}</p>
+            <p className={`task-title ${isDone ? 'task-done' : ''}`}>{task.title}</p>
           )}
           <div className="task-meta">
             {task.dueDate && <span className="badge">Due {task.dueDate}</span>}
             {task.startDate && <span className="badge">Start {task.startDate}</span>}
-            <span className="badge">{task.status ?? 'open'}</span>
+            <button
+              className={`badge badge-status status-${task.status || 'open'}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                const nextStatus = task.status === 'open' ? 'in-progress' : task.status === 'in-progress' ? 'done' : 'open';
+                onUpdate(task.id, { status: nextStatus });
+              }}
+              title="Click to cycle: open → in-progress → done → open"
+            >
+              {task.status === 'done' ? '✓ ' : task.status === 'in-progress' ? '⟳ ' : '○ '}
+              {task.status || 'open'}
+            </button>
             <span className={`badge ${task.createdBy === 'ai' ? 'badge-ai' : 'badge-user'}`}>
               {task.createdBy === 'ai' ? 'AI' : 'User'}
             </span>
@@ -245,16 +256,6 @@ const TaskNodeView = ({
           }}
         >
           {editing ? 'Save' : 'Edit'}
-        </button>
-        <button
-          className="secondary"
-          onClick={() =>
-            onUpdate(task.id, {
-              status: task.status === 'done' ? 'open' : 'done'
-            })
-          }
-        >
-          {task.status === 'done' ? 'Reopen' : 'Mark done'}
         </button>
         <button className="subtle" onClick={() => onDelete(task.id)}>
           Delete

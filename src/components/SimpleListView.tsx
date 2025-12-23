@@ -69,6 +69,7 @@ const ListItem = ({
   const [startDate, setStartDate] = useState(task.startDate || '');
   const [attachments, setAttachments] = useState<Attachment[]>(task.attachments || []);
   const canSplit = task.dueDate ? task.dueDate > new Date().toISOString().slice(0, 10) && task.status !== 'done' : false;
+  const isDone = task.status === 'done';
 
   return (
     <div className="task-card" onClick={() => onSelect(task.id)}>
@@ -214,15 +215,6 @@ const ListItem = ({
           }}
         >
           {editing ? 'Save' : 'Edit'}
-        </button>
-        <button
-          className="secondary"
-          onClick={(e) => {
-            e.stopPropagation();
-            onUpdate(task.id, { status: task.status === 'done' ? 'open' : 'done' });
-          }}
-        >
-          {task.status === 'done' ? 'Reopen' : 'Mark done'}
         </button>
         <button
           className="secondary"
