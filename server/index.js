@@ -1,0 +1,167 @@
+import 'dotenv/config';
+import express from 'express';
+import cors from 'cors';
+import { chatWithPlanner, generateSubtasks } from './ai.js';
+import { loginUser, registerUser } from './auth.js';
+import { getUserState, saveUserState } from './state.js';
+import { getBalance, topUpBalance, chargeUsage } from './billing.js';
+import { createCheckoutSession, handleStripeWebhook } from './stripe.js';
+
+const app = express();
+app.use('/api/payments/stripe/webhook', express.raw({ type: 'application/json' }));
+app.use(express.json({ limit: '10mb' }));
+app.use(cors());
+
+// Simple request logger
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const ms = Date.now() - start;
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.originalUrl} -> ${res.statusCode} ${ms}ms`);
+  });
+  next();
+});
+
+app.post('/api/ai/split', async (req, res) => {
+  try {
+    const { task, conversation, globalInstruction, modelId, userId } = req.body;
+    if (!userId) return res.status(400).json({ error: 'Missing userId' });
+    const result = await generateSubtasks({ task, conversation, globalInstruction, modelId });
+    if (result.totalCostUsd > 0) {
+      const amountCents = Math.ceil(result.totalCostUsd * 100 * 2); // 100% revenue -> double charge
+      await chargeUsage({
+        userId,
+        amountCents,
+        model: result.modelUsed,
+        promptTokens: result.usage?.prompt_tokens || 0,
+        completionTokens: result.usage?.completion_tokens || 0,
+        description: 'AI split charge (non-refundable)'
+      });
+    }
+    res.json({ items: result.items });
+  } catch (err) {
+    res.status(500).json({ error: (err && err.message) || 'Unknown error' });
+  }
+});
+
+app.post('/api/ai/chat', async (req, res) => {
+  try {
+    const { prompt, tasks, globalInstruction, selectedTaskId, modelId, userId } = req.body;
+    if (!userId) return res.status(400).json({ error: 'Missing userId' });
+    const result = await chatWithPlanner({ prompt, tasks, globalInstruction, selectedTaskId, modelId });
+    if (result.totalCostUsd > 0) {
+      const amountCents = Math.ceil(result.totalCostUsd * 100 * 2); // 100% revenue -> double charge
+      await chargeUsage({
+        userId,
+        amountCents,
+        model: result.modelUsed,
+        promptTokens: result.usage?.prompt_tokens || 0,
+        completionTokens: result.usage?.completion_tokens || 0,
+        description: 'AI coach charge (non-refundable)'
+      });
+    }
+    res.json({ content: result.content });
+  } catch (err) {
+    res.status(500).json({ error: (err && err.message) || 'Unknown error' });
+  }
+});
+
+app.post('/api/auth/register', async (req, res) => {
+  try {
+    const { email, password, name } = req.body;
+    if (!email || !password || !name) return res.status(400).send('Missing fields');
+    const user = await registerUser(email, password, name);
+    res.json(user);
+  } catch (err) {
+    res.status(400).send((err && err.message) || 'Registration failed');
+  }
+});
+
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) return res.status(400).send('Missing fields');
+    const user = await loginUser(email, password);
+    res.json(user);
+  } catch (err) {
+    res.status(400).send((err && err.message) || 'Login failed');
+  }
+});
+
+app.get('/api/state', async (req, res) => {
+  try {
+    const userId = req.query.userId;
+    if (!userId) return res.status(400).json({ error: 'Missing userId' });
+    const state = await getUserState(userId);
+    res.json(state);
+  } catch (err) {
+    console.error('Failed to load state', err);
+    res.status(500).json({ error: (err && err.message) || 'Failed to load state' });
+  }
+});
+
+app.post('/api/state', async (req, res) => {
+  try {
+    const { userId, tasks, chat, config, selectedTaskId } = req.body;
+    if (!userId) return res.status(400).json({ error: 'Missing userId' });
+    const state = await saveUserState(userId, { tasks, chat, config, selectedTaskId });
+    res.json(state);
+  } catch (err) {
+    console.error('Failed to save state', err);
+    res.status(500).json({ error: (err && err.message) || 'Failed to save state' });
+  }
+});
+
+app.get('/api/billing/balance', async (req, res) => {
+  try {
+    const userId = req.query.userId;
+    if (!userId) return res.status(400).json({ error: 'Missing userId' });
+    const balanceCents = await getBalance(userId);
+    res.json({ balanceCents });
+  } catch (err) {
+    console.error('Failed to fetch balance', err);
+    res.status(500).json({ error: (err && err.message) || 'Failed to fetch balance' });
+  }
+});
+
+app.post('/api/billing/topup', async (req, res) => {
+  try {
+    const { userId, amountCents, reference, idempotencyKey } = req.body;
+    if (!userId) return res.status(400).json({ error: 'Missing userId' });
+    if (amountCents == null) return res.status(400).json({ error: 'Missing amountCents' });
+    if (!idempotencyKey) return res.status(400).json({ error: 'Missing idempotencyKey' });
+    const result = await topUpBalance({ userId, amountCents, reference, idempotencyKey });
+    res.json({ ...result, nonRefundable: true });
+  } catch (err) {
+    console.error('Failed to top up', err);
+    res.status(500).json({ error: (err && err.message) || 'Failed to top up' });
+  }
+});
+
+app.post('/api/payments/stripe/checkout', async (req, res) => {
+  try {
+    const { userId, amountCents } = req.body;
+    if (!userId || amountCents == null) return res.status(400).json({ error: 'Missing userId or amountCents' });
+    const session = await createCheckoutSession({ userId, amountCents });
+    res.json(session);
+  } catch (err) {
+    console.error('Failed to create checkout session', err);
+    res.status(500).json({ error: (err && err.message) || 'Failed to create checkout session' });
+  }
+});
+
+app.post('/api/payments/stripe/webhook', async (req, res) => {
+  const signature = req.headers['stripe-signature'];
+  try {
+    await handleStripeWebhook(req.body, signature);
+    res.json({ received: true });
+  } catch (err) {
+    console.error('Stripe webhook error', err);
+    res.status(400).send(`Webhook Error: ${(err && err.message) || 'unknown'}`);
+  }
+});
+
+const port = process.env.PORT || 8787;
+app.listen(port, () => {
+  console.log(`API server listening on ${port}`);
+});

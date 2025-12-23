@@ -1,0 +1,61 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  name          String
+  passwordHash  String
+  passwordSalt  String
+  createdAt     DateTime @default(now())
+  balanceCents  Int      @default(0)
+  state         UserState?
+  topups        TopUpTransaction[]
+  usageCharges  UsageTransaction[]
+}
+
+model UserState {
+  userId         String   @id
+  tasks          Json     @default("[]")
+  chat           Json     @default("[]")
+  config         Json     @default("{}")
+  selectedTaskId String?
+  updatedAt      DateTime @updatedAt
+  createdAt      DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model TopUpTransaction {
+  id           String   @id @default(uuid())
+  userId       String
+  amountCents  Int
+  reference    String?
+  status       String   @default("completed")
+  note         String?  @default("Non-refundable top-up")
+  provider     String   @default("manual")
+  providerRef  String?
+  idempotencyKey String @unique
+  createdAt    DateTime @default(now())
+  completedAt  DateTime?
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model UsageTransaction {
+  id           String   @id @default(uuid())
+  userId       String
+  amountCents  Int
+  model        String
+  promptTokens Int      @default(0)
+  completionTokens Int  @default(0)
+  description  String?
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
