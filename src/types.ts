@@ -7,8 +7,10 @@ export type Attachment = {
   content?: string;
   dataUrl?: string;
   r2Key?: string; // Cloudflare R2 storage key for persistent files
-  extractionStatus?: 'ok' | 'unsupported' | 'too-large' | 'error';
+  extractionStatus?: 'ok' | 'unsupported' | 'too-large' | 'error' | 'pending';
   note?: string;
+  // Local-only reference to the selected File for deferred upload
+  file?: File;
 };
 
 export type TaskNode = {

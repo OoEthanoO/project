@@ -47,7 +47,7 @@ export const extractAttachment = async (file, userId) => {
         contentType: file.type
     };
     
-    // Images and PDFs: upload to R2
+    // Images and PDFs: mark pending for deferred upload on submit
     if (file.type.startsWith('image/') || file.type === 'application/pdf') {
         if (file.size > MAX_IMAGE_BYTES) {
             return { ...base, extractionStatus: 'too-large', note: 'File too large (max 10MB)' };
@@ -55,45 +55,7 @@ export const extractAttachment = async (file, userId) => {
         if (!userId) {
             return { ...base, extractionStatus: 'error', note: 'Login required for file uploads' };
         }
-        try {
-            // Step 1: Get presigned upload URL from server
-            const urlResponse = await apiCall('/api/upload-url', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    fileName: file.name,
-                    contentType: file.type,
-                    userId
-                })
-            });
-            
-            if (!urlResponse.ok) {
-                const error = await urlResponse.text();
-                return { ...base, extractionStatus: 'error', note: `Upload failed: ${error}` };
-            }
-            
-            const { uploadUrl, key } = await urlResponse.json();
-            
-            // Step 2: Upload file directly to R2 (bypasses Vercel payload limit)
-            const uploadResponse = await fetch(uploadUrl, {
-                method: 'PUT',
-                headers: { 
-                    'Content-Type': file.type
-                },
-                body: file
-            });
-            
-            if (!uploadResponse.ok) {
-                const error = await uploadResponse.text();
-                return { ...base, extractionStatus: 'error', note: `R2 upload failed: ${error}` };
-            }
-            
-            console.log('✅ File uploaded directly to R2:', key);
-            return { ...base, r2Key: key, extractionStatus: 'ok' };
-        }
-        catch (err) {
-            return { ...base, extractionStatus: 'error', note: err.message };
-        }
+        return { ...base, extractionStatus: 'pending', file };
     }
     
     // Text files: extract content inline

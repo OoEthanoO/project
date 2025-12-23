@@ -2,6 +2,7 @@ import { FormEvent, useState } from 'react';
 import { Attachment, TaskNode } from '../types';
 import { randomId } from '../lib/task-utils';
 import { extractAttachment } from '../lib/file-extract';
+import { apiCall } from '../lib/api-client.js';
 
 type Props = {
   onSubmit: (task: TaskNode) => void;
@@ -57,19 +58,57 @@ const TaskForm = ({ onSubmit, parentId = null, onCancel, userId, balanceCents = 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
-    onSubmit({
-      id: randomId(),
-      title: title.trim(),
-      description: description.trim(),
-      dueDate: dueDate || undefined,
-      startDate: startDate || undefined,
-      attachments,
-      children: [],
-      parentId,
-      status: 'open',
-      createdBy: 'user',
-      createdAt: new Date().toISOString()
-    });
+    const finalize = async () => {
+      // Upload any pending attachments (images/PDFs) before saving
+      const uploaded = await Promise.all(
+        (attachments || []).map(async (a) => {
+          if (a.extractionStatus !== 'pending' || !a.file) return a;
+          try {
+            const urlResponse = await apiCall('/api/upload-url', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                fileName: a.name,
+                contentType: a.contentType || a.type || 'application/octet-stream',
+                userId
+              })
+            });
+            if (!urlResponse.ok) {
+              const error = await urlResponse.text();
+              return { ...a, extractionStatus: 'error', note: `Upload failed: ${error}` };
+            }
+            const { uploadUrl, key } = await urlResponse.json();
+            const putRes = await fetch(uploadUrl, {
+              method: 'PUT',
+              headers: { 'Content-Type': a.contentType || a.type || 'application/octet-stream' },
+              body: a.file as any
+            });
+            if (!putRes.ok) {
+              const error = await putRes.text();
+              return { ...a, extractionStatus: 'error', note: `R2 upload failed: ${error}` };
+            }
+            return { ...a, r2Key: key, extractionStatus: 'ok', file: undefined };
+          } catch (err: any) {
+            return { ...a, extractionStatus: 'error', note: err?.message || 'Upload error' };
+          }
+        })
+      );
+
+      onSubmit({
+        id: randomId(),
+        title: title.trim(),
+        description: description.trim(),
+        dueDate: dueDate || undefined,
+        startDate: startDate || undefined,
+        attachments: uploaded as Attachment[],
+        children: [],
+        parentId,
+        status: 'open',
+        createdBy: 'user',
+        createdAt: new Date().toISOString()
+      });
+    };
+    finalize();
     setTitle('');
     setDescription('');
     setAttachments([]);
