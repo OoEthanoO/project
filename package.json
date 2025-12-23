@@ -15,7 +15,7 @@
     "lint": "tsc --noEmit",
     "server": "node server/index.js",
     "start": "prisma generate && node server/index.js",
-    "prisma:generate": "prisma generate",
+    "prisma:generate": "prisma generate || true",
     "postinstall": "prisma generate || true"
   },
   "dependencies": {
