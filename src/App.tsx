@@ -388,32 +388,43 @@ const App = () => {
               <span>Balance</span>
               <strong>${(balanceCents / 100).toFixed(6)}</strong>
             </div>
-            <select
-              value={modelId}
-              onChange={(e) => setModelId(e.target.value)}
-            >
-              {modelTiers.map((tier) => (
-                <option key={tier.id} value={tier.id}>
-                  {tier.label}
-                </option>
-              ))}
-            </select>
             <button className="secondary" onClick={() => setShowTopUpModal(true)}>
               Add funds
             </button>
-            <div className="pill" style={{ cursor: 'pointer' }} onClick={handleLogout} title={user?.email}>
+            <div
+              className="pill"
+              title={`Signed in as ${user?.email || 'unknown'}`}
+              style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+            >
               <span role="img" aria-label="profile">
                 👤
               </span>
-              <strong>{user?.name || user?.email}</strong>
+              <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.1 }}>
+                <strong>{user?.name || 'Account'}</strong>
+                <span className="muted" style={{ fontSize: 11 }}>{user?.email}</span>
+              </div>
             </div>
+            <button className="secondary" onClick={handleLogout} title="Log out of this account">
+              Logout
+            </button>
           </div>
         </div>
-        <div className="model-info">
+        <div className="model-info" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <p className="task-title" style={{ margin: 0, fontSize: 14 }}>
             Model: {modelId}
           </p>
-          <p className="muted" style={{ margin: '4px 0 0', fontSize: 12 }}>{modelDesc}</p>
+          <p className="muted" style={{ margin: '0', fontSize: 12 }}>{modelDesc}</p>
+          <select
+            value={modelId}
+            onChange={(e) => setModelId(e.target.value)}
+            style={{ minWidth: 240, marginTop: 4 }}
+          >
+            {modelTiers.map((tier) => (
+              <option key={tier.id} value={tier.id}>
+                {tier.label}
+              </option>
+            ))}
+          </select>
         </div>
         <div className="floating-buttons">
           <button className="primary" onClick={() => setShowTaskModal(true)}>
