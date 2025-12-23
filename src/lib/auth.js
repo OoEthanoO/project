@@ -1,3 +1,5 @@
+import { apiCall } from './api-client.js';
+
 const SESSION_KEY = 'planner.session';
 const saveSession = (session, remember) => {
     const store = remember ? localStorage : sessionStorage;
@@ -26,7 +28,7 @@ const loadSession = () => {
     }
 };
 const callAuth = async (path, payload) => {
-    const res = await fetch(`/api/auth${path}`, {
+    const res = await apiCall(`/api/auth${path}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)

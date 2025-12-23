@@ -1,3 +1,5 @@
+import { apiCall } from './api-client.js';
+
 const handle = async (res) => {
     if (!res.ok) {
         const text = await res.text();
@@ -6,7 +8,7 @@ const handle = async (res) => {
     return res.json();
 };
 export const fetchState = async (userId) => {
-    const res = await fetch(`/api/state?userId=${encodeURIComponent(userId)}`);
+    const res = await apiCall(`/api/state?userId=${encodeURIComponent(userId)}`);
     const data = await handle(res);
     return {
         tasks: data.tasks || [],
@@ -36,7 +38,7 @@ export const saveState = async (userId, state) => {
         tasks: stripDataUrls(state.tasks || [])
     };
     
-    const res = await fetch('/api/state', {
+    const res = await apiCall('/api/state', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId, ...cleanedState })

@@ -1,8 +1,10 @@
 import { randomId } from './task-utils';
+import { apiCall } from './api-client.js';
+
 const apiSplit = '/api/ai/split';
 const apiChat = '/api/ai/chat';
 export const generateSubtasks = async ({ task, conversation, globalInstruction, modelId, userId }) => {
-    const res = await fetch(apiSplit, {
+    const res = await apiCall(apiSplit, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ task, conversation, globalInstruction, modelId, userId })
@@ -27,7 +29,7 @@ export const generateSubtasks = async ({ task, conversation, globalInstruction, 
     }));
 };
 export const chatWithPlanner = async (prompt, tasks, globalInstruction, selectedTaskId, modelId, userId) => {
-    const res = await fetch(apiChat, {
+    const res = await apiCall(apiChat, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt, tasks, globalInstruction, selectedTaskId, modelId, userId })

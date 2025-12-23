@@ -1,5 +1,7 @@
+import { apiCall } from './api-client.js';
+
 export const createCheckoutSession = async (userId, amountCents) => {
-    const res = await fetch('/api/payments/stripe/checkout', {
+    const res = await apiCall('/api/payments/stripe/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId, amountCents })

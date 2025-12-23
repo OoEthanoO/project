@@ -29,7 +29,8 @@ const AdminPanel = ({ user }: { user: AccountUser | null }) => {
     setError('');
     setLoading(true);
     try {
-      const res = await fetch('/api/admin/summary', {
+      const { apiCall } = await import('../lib/api-client.js');
+      const res = await apiCall('/api/admin/summary', {
         headers: {
           'x-admin-key': apiKey,
           'x-admin-email': user?.email || ''

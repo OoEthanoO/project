@@ -1,4 +1,5 @@
 import { randomId } from './task-utils';
+import { apiCall } from './api-client.js';
 const TEXT_TYPES = [
     'text/plain',
     'text/markdown',
@@ -56,7 +57,7 @@ export const extractAttachment = async (file, userId) => {
         }
         try {
             // Step 1: Get presigned upload URL from server
-            const urlResponse = await fetch('/api/upload-url', {
+            const urlResponse = await apiCall('/api/upload-url', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
