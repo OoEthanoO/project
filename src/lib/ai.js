@@ -8,8 +8,8 @@ export const generateSubtasks = async ({ task, conversation, globalInstruction, 
         body: JSON.stringify({ task, conversation, globalInstruction, modelId, userId })
     });
     if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || 'Failed to reach AI service');
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'Failed to reach AI service');
     }
     const data = await res.json();
     const items = data.items || [];
@@ -33,8 +33,8 @@ export const chatWithPlanner = async (prompt, tasks, globalInstruction, selected
         body: JSON.stringify({ prompt, tasks, globalInstruction, selectedTaskId, modelId, userId })
     });
     if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || 'Failed to reach AI service');
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'Failed to reach AI service');
     }
     const data = await res.json();
     const content = data.content || '';

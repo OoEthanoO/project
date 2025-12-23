@@ -1,4 +1,5 @@
 import fetch from 'node-fetch';
+import { priceMap, isFreeModel, supportsFiles, getTierIndex } from '../shared/model-config.js';
 
 const formatDate = (date) => date.toISOString().split('T')[0];
 
@@ -26,13 +27,6 @@ const parseJsonContent = (raw) => {
     }
     throw new Error(`Failed to parse JSON. Raw: ${raw.slice(0, 500)}`);
   }
-};
-
-const priceMap = {
-  'meta-llama/llama-3.3-70b-instruct:free': { in: 0, out: 0 },
-  'google/gemini-2.5-flash-lite-preview-09-2025': { in: 0.1, out: 0.4 },
-  'openai/gpt-5-mini': { in: 0.25, out: 2 },
-  'openai/gpt-5.1': { in: 1.25, out: 10 }
 };
 
 const summarizeAttachments = (attachments = [], maxItems = 3, maxChars = 800) => {
@@ -90,7 +84,7 @@ const callOpenRouter = async ({ messages, modelId, plugins }) => {
 };
 
 export const generateSubtasks = async ({ task, conversation = [], globalInstruction, modelId }) => {
-  const supportsFiles = modelId !== 'meta-llama/llama-3.3-70b-instruct:free';
+  const supportsFilesFlag = supportsFiles(modelId);
   const now = new Date();
   let start = now;
   if (task.startDate) {
@@ -110,13 +104,13 @@ export const generateSubtasks = async ({ task, conversation = [], globalInstruct
     .map((a) => `${a.name || 'file'}:\n${(a.content || '').slice(0, 800)}`)
     .join('\n---\n');
   const imageParts =
-    supportsFiles &&
+    supportsFilesFlag &&
     (task.attachments || [])
       .filter((a) => a.dataUrl && a.dataUrl.startsWith('data:image'))
       .slice(0, 4)
       .map((a) => ({ type: 'image_url', image_url: { url: a.dataUrl } })) || [];
   const pdfParts =
-    supportsFiles &&
+    supportsFilesFlag &&
     (task.attachments || [])
       .filter((a) => a.dataUrl && a.dataUrl.startsWith('data:application/pdf'))
       .slice(0, 2)
@@ -136,11 +130,11 @@ export const generateSubtasks = async ({ task, conversation = [], globalInstruct
     'Avoid assigning a subtask due on the same day you set it (or on the start date) unless absolutely necessary, because the start of that day has already passed.',
     'Balance the workload across the available days; do not frontload or backload. If work is in units (pages/chapters/problems), distribute units evenly so daily effort is consistent.',
     'Do NOT emit or invent a startDate for subtasks; only use dueDate when needed.',
-    modelId === 'openai/gpt-5.1'
+    getTierIndex(modelId) === 3
       ? 'Use deep reasoning: anticipate risks, add QA/validation steps, and suggest buffers.'
-      : modelId === 'openai/gpt-5-mini'
+      : getTierIndex(modelId) === 2
         ? 'Aim for thorough but concise breakdowns that handle complex constraints.'
-        : modelId === 'google/gemini-2.5-flash-lite-preview-09-2025'
+        : getTierIndex(modelId) === 1
           ? 'Balance cost and quality; keep steps focused and leverage attachments when useful.'
           : 'Text-only mode: ignore attachments; rely on titles/descriptions.',
     'Respond ONLY as JSON with shape: {"items":[{"title":"...", "description":"...", "dueDate":"YYYY-MM-DD" | null}]}',
@@ -172,7 +166,7 @@ export const generateSubtasks = async ({ task, conversation = [], globalInstruct
     ],
     modelId,
     plugins:
-      supportsFiles && pdfParts.length > 0
+      supportsFilesFlag && pdfParts.length > 0
         ? [
             {
               id: 'file-parser',
@@ -192,7 +186,7 @@ export const generateSubtasks = async ({ task, conversation = [], globalInstruct
 };
 
 export const chatWithPlanner = async ({ prompt, tasks, globalInstruction, selectedTaskId, modelId }) => {
-  const supportsFiles = modelId !== 'meta-llama/llama-3.3-70b-instruct:free';
+  const supportsFilesFlag = supportsFiles(modelId);
   const now = new Date();
   const flatten = (list, depth = 0, orderRef = { value: 0 }) =>
     (list || []).flatMap((t) => {
@@ -209,7 +203,7 @@ export const chatWithPlanner = async ({ prompt, tasks, globalInstruction, select
       }${t.description ? ` — ${t.description.slice(0, 60)}` : ''}`
   );
 
-  const allAttachments = supportsFiles
+  const allAttachments = supportsFilesFlag
     ? (tasks || []).flatMap((t) =>
         (t.attachments || []).map((a) => ({
           ...a,
@@ -229,7 +223,7 @@ export const chatWithPlanner = async ({ prompt, tasks, globalInstruction, select
     '- Direct questions starting with "what", "when", "where", "which", "how many": Answer the question directly in 1-2 sentences. No greeting, no follow-up questions.',
     '- Casual greetings only ("hello", "hi", "hey", "how are you"): Respond warmly in 1-2 sentences without task analysis.',
     '- Planning requests ("help me plan", "what should I do", "suggest a schedule"): Provide detailed task analysis and suggestions.',
-    supportsFiles ? 'Only inspect attachments when the user explicitly needs information from files.' : 'NOTE: You are using a text-only model and cannot access file attachments. If a question requires file content, politely explain you cannot open files and suggest the user upgrade to a multimodal model or paste relevant content into task descriptions.',
+    supportsFilesFlag ? 'Only inspect attachments when the user explicitly needs information from files.' : 'NOTE: You are using a text-only model and cannot access file attachments. If a question requires file content, politely explain you cannot open files and suggest the user upgrade to a multimodal model or paste relevant content into task descriptions.',
     'Do not add conversational padding to factual answers. Be precise and direct.',
     'IMPORTANT: Do not use markdown formatting (no **bold**, *italics*, # headers, etc.). Use plain text only.',
     globalInstruction ? `Global instruction: ${globalInstruction}` : ''
@@ -264,7 +258,7 @@ export const chatWithPlanner = async ({ prompt, tasks, globalInstruction, select
   ];
 
   let requestedFiles = [];
-  if (supportsFiles && allAttachments.length) {
+  if (supportsFilesFlag && allAttachments.length) {
     try {
       const selection = await callOpenRouter({
         messages: [
@@ -285,7 +279,7 @@ export const chatWithPlanner = async ({ prompt, tasks, globalInstruction, select
     }
   }
 
-  const allowedFiles = supportsFiles
+  const allowedFiles = supportsFilesFlag
     ? allAttachments.filter((a) => {
         const nameMatch = requestedFiles.some((name) => (a.name || '').toLowerCase() === (name || '').toLowerCase());
         const hasContent = a.dataUrl && (a.dataUrl.startsWith('data:image') || a.dataUrl.startsWith('data:application/pdf'));
@@ -340,7 +334,7 @@ export const chatWithPlanner = async ({ prompt, tasks, globalInstruction, select
       { role: 'user', content: userContent }
     ],
     modelId,
-    plugins: supportsFiles && pdfParts.length > 0 ? [{ id: 'file-parser' }] : undefined
+    plugins: supportsFilesFlag && pdfParts.length > 0 ? [{ id: 'file-parser' }] : undefined
   });
 
   // Track files that were explicitly opened

@@ -14,6 +14,7 @@ import { currentUser, login, logout, register } from './lib/auth';
 import { fetchState, saveState } from './lib/state';
 import { fetchBalance, topUp } from './lib/billing';
 import { createCheckoutSession } from './lib/payments';
+import { MODEL_TIERS, getDefaultModel } from '../shared/model-config.js';
 
 const initialCoachMessage = () => ({
   id: randomId(),
@@ -55,35 +56,15 @@ const App = () => {
   const [authNotice, setAuthNotice] = useState('');
   const navigate = useNavigate();
 
-  const modelTiers = [
-    {
-      id: 'meta-llama/llama-3.3-70b-instruct:free',
-      label: 'Tier 0 — Free (text-only)',
-      note: 'Free text-only; no attachments. Paste important file content into descriptions.',
-      multimodal: false
-    },
-    {
-      id: 'google/gemini-2.5-flash-lite-preview-09-2025',
-      label: 'Tier 1 — Budget multimodal',
-      note: 'Budget multimodal; good default for using attachments without heavy spend.',
-      multimodal: true
-    },
-    {
-      id: 'openai/gpt-5-mini',
-      label: 'Tier 2 — Strong multimodal',
-      note: 'Stronger multimodal; better for complex tasks and mixed attachments.',
-      multimodal: true
-    },
-    {
-      id: 'openai/gpt-5.1',
-      label: 'Tier 3 — Premium multimodal',
-      note: 'Premium multimodal; best for big attachments and deep breakdowns.',
-      multimodal: true
-    }
-  ];
+  const modelTiers = MODEL_TIERS;
   const [globalInstruction, setGlobalInstruction] = useState('');
-  const defaultModel = modelTiers[0]?.id || 'meta-llama/llama-3.3-70b-instruct:free';
+  const defaultModel = getDefaultModel().id;
   const [modelId, setModelId] = useState(defaultModel);
+  const currentTier = modelTiers.find((t) => t.id === modelId);
+  const isPaidModel = currentTier?.multimodal ?? false;
+  const hasMinBalance = balanceCents >= 50;
+  const canUsePaidModel = !isPaidModel || hasMinBalance;
+  
   const modelDesc =
     modelTiers.find((t) => t.id === modelId)?.note ||
     'Pick a model tier. Paid tiers handle attachments; Tier 0 is text-only.';
@@ -351,6 +332,10 @@ const App = () => {
     const task = findTask(tasks, id);
     if (!task) return;
     if (!user) return;
+    if (isPaidModel && !hasMinBalance) {
+      alert('Minimum balance of $0.50 required to use paid models. Please add funds or switch to the free tier.');
+      return;
+    }
     if (isDueTodayOrPast(task.dueDate)) {
       setMessages((prev) => [
         ...prev,
@@ -388,6 +373,16 @@ const App = () => {
 
   const handleChat = async (text: string) => {
     if (!user) return;
+    if (isPaidModel && !hasMinBalance) {
+      const errorMsg: ChatMessage = {
+        id: randomId(),
+        role: 'ai',
+        content: 'Minimum balance of $0.50 required to use paid models. Please add funds or switch to the free tier (Tier 0).',
+        createdAt: new Date().toISOString()
+      };
+      setMessages((prev) => [...prev, errorMsg]);
+      return;
+    }
     const userMsg: ChatMessage = { id: randomId(), role: 'user', content: text, createdAt: new Date().toISOString() };
     setMessages((prev) => [...prev, userMsg]);
     setChatting(true);
@@ -412,6 +407,23 @@ const App = () => {
       setMessages((prev) => [...prev, errorMsg]);
     } finally {
       setChatting(false);
+    }
+  };
+
+  const handleClearChat = async () => {
+    if (!user) return;
+    const clearedMessages = [initialCoachMessage()];
+    setMessages(clearedMessages);
+    // Immediately save to server to prevent polling from restoring old messages
+    try {
+      await saveState(user.id, {
+        tasks,
+        chat: clearedMessages,
+        config: { globalInstruction, modelId },
+        selectedTaskId
+      });
+    } catch (err) {
+      console.error('Failed to save cleared chat', err);
     }
   };
 
@@ -467,6 +479,11 @@ const App = () => {
             Model: {modelId}
           </p>
           <p className="muted" style={{ margin: '0', fontSize: 12 }}>{modelDesc}</p>
+          {isPaidModel && !hasMinBalance && (
+            <p style={{ margin: '4px 0 0 0', fontSize: 12, color: '#d32f2f', fontWeight: 500 }}>
+              ⚠️ Minimum $0.50 balance required. Add funds or switch to Tier 0 (free).
+            </p>
+          )}
           <select
             value={modelId}
             onChange={(e) => setModelId(e.target.value)}
@@ -543,7 +560,7 @@ const App = () => {
             messages={messages}
             onSend={handleChat}
             busy={planningIds.size > 0 || chatting}
-            onClear={() => setMessages([initialCoachMessage()])}
+            onClear={handleClearChat}
           />
         </div>
       </div>

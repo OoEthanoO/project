@@ -2,6 +2,7 @@ import { chatWithPlanner } from '../../server/ai.js';
 import { getBalance, chargeUsage } from '../../server/billing.js';
 import { sendJson, readJson } from '../_lib/http.js';
 import { logRequest } from '../_lib/log.js';
+import { isFreeModel } from '../../shared/model-config.js';
 
 export default async function handler(req, res) {
   logRequest(req, res);
@@ -11,13 +12,13 @@ export default async function handler(req, res) {
   try {
     const { prompt, tasks, globalInstruction, selectedTaskId, modelId, userId } = await readJson(req);
     if (!userId) return sendJson(res, 400, { error: 'Missing userId' });
-    const isFreeModel = modelId === 'meta-llama/llama-3.3-70b-instruct:free';
-    if (!isFreeModel) {
+    const isFree = isFreeModel(modelId);
+    if (!isFree) {
       const bal = await getBalance(userId);
-      if (bal <= 0) return sendJson(res, 402, { error: 'Insufficient balance' });
+      if (bal < 50) return sendJson(res, 402, { error: 'Minimum balance of $0.50 required for paid models' });
     }
     const result = await chatWithPlanner({ prompt, tasks, globalInstruction, selectedTaskId, modelId });
-    if (!isFreeModel && result.totalCostUsd > 0) {
+    if (!isFree && result.totalCostUsd > 0) {
       const amountCents = Math.ceil(result.totalCostUsd * 100 * 2); // double charge (100% margin)
       await chargeUsage({
         userId,
