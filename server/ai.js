@@ -122,6 +122,7 @@ export const generateSubtasks = async ({ task, conversation = [], globalInstruct
     'Split the given task into concrete, daily-size subtasks.',
     'Only schedule subtasks between the start date and the parent due date; no dates before the start date or after the parent due date.',
     'Be concise and actionable. Include optional dueDate per subtask if the parent dueDate exists; keep ISO-8601 (YYYY-MM-DD).',
+    'Balance the workload across the available days; do not frontload or backload. If work is in units (pages/chapters/problems), distribute units evenly so daily effort is consistent.',
     'Do NOT emit or invent a startDate for subtasks; only use dueDate when needed.',
     modelId === 'anthropic/claude-3.5-sonnet'
       ? 'Use deep reasoning: anticipate risks, add QA/validation steps, and suggest buffers.'

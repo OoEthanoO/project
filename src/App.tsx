@@ -38,6 +38,7 @@ const App = () => {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [planning, setPlanning] = useState(false);
   const [chatting, setChatting] = useState(false);
+  const [planningTaskId, setPlanningTaskId] = useState<string | null>(null);
   const [showChat, setShowChat] = useState(false);
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [showInstructionModal, setShowInstructionModal] = useState(false);
@@ -317,6 +318,7 @@ const App = () => {
       return;
     }
     setPlanning(true);
+    setPlanningTaskId(id);
     try {
       const subtasks = await generateSubtasks({ task, conversation: messages, globalInstruction, modelId, userId: user.id });
       setTasks((prev) =>
@@ -328,6 +330,7 @@ const App = () => {
       if (subtasks[0]) setSelectedTaskId(subtasks[0].id);
     } finally {
       setPlanning(false);
+      setPlanningTaskId(null);
     }
   };
 
@@ -434,6 +437,8 @@ const App = () => {
             }}
             onUpdate={handleUpdateTask}
             selectedId={selectedTaskId}
+            planning={planning}
+            planningTaskId={planningTaskId}
           />
         ) : (
           <SimpleListView
@@ -445,6 +450,8 @@ const App = () => {
               if (selectedTaskId === id) setSelectedTaskId(null);
             }}
             onUpdate={handleUpdateTask}
+            planning={planning}
+            planningTaskId={planningTaskId}
           />
         )}
       </div>
