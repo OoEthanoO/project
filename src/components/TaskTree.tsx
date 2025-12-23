@@ -80,6 +80,7 @@ const TaskNodeView = ({
   onUpdate: (id: string, updates: Partial<TaskNode>) => void;
   planningIds?: Set<string>;
 }) => {
+  const [collapsed, setCollapsed] = useState(false);
   const [showSubForm, setShowSubForm] = useState(false);
   const selected = selectedId === task.id;
   const canSplit = !isDueTodayOrPast(task.dueDate);
@@ -101,7 +102,20 @@ const TaskNodeView = ({
       }}
     >
       <div className="task-header">
-        <div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {task.children?.length ? (
+            <button
+              type="button"
+              className="secondary"
+              style={{ padding: '4px 8px', minWidth: 0, width: 32 }}
+              onClick={(e) => {
+                e.stopPropagation();
+                setCollapsed((v) => !v);
+              }}
+            >
+              {collapsed ? '›' : '∨'}
+            </button>
+          ) : null}
           {editing ? (
             <>
               <div className="form-row">
@@ -255,7 +269,7 @@ const TaskNodeView = ({
           />
         </div>
       )}
-      {(task.children ?? []).length > 0 && (
+      {(task.children ?? []).length > 0 && !collapsed && (
         <div className="subtasks">
           {(task.children ?? []).map((child, idx) => (
             <TaskNodeView
