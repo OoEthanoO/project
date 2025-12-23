@@ -6,6 +6,7 @@ export type Attachment = {
   contentType?: string;
   content?: string;
   dataUrl?: string;
+  r2Key?: string; // Cloudflare R2 storage key for persistent files
   extractionStatus?: 'ok' | 'unsupported' | 'too-large' | 'error';
   note?: string;
 };

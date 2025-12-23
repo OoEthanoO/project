@@ -37,7 +37,7 @@ const readFileAsDataUrl = async (file) => {
         reader.readAsDataURL(file);
     });
 };
-export const extractAttachment = async (file) => {
+export const extractAttachment = async (file, userId) => {
     const base = {
         id: randomId(),
         name: file.name,
@@ -45,30 +45,57 @@ export const extractAttachment = async (file) => {
         type: file.type,
         contentType: file.type
     };
-    if (file.type.startsWith('image/')) {
+    
+    // Images and PDFs: upload to R2
+    if (file.type.startsWith('image/') || file.type === 'application/pdf') {
         if (file.size > MAX_IMAGE_BYTES) {
-            return { ...base, extractionStatus: 'too-large', note: 'Image too large to inline' };
+            return { ...base, extractionStatus: 'too-large', note: 'File too large (max 10MB)' };
+        }
+        if (!userId) {
+            return { ...base, extractionStatus: 'error', note: 'Login required for file uploads' };
         }
         try {
-            const dataUrl = await readFileAsDataUrl(file);
-            return { ...base, dataUrl, extractionStatus: 'ok' };
+            // Step 1: Get presigned upload URL from server
+            const urlResponse = await fetch('/api/upload-url', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    fileName: file.name,
+                    contentType: file.type,
+                    userId
+                })
+            });
+            
+            if (!urlResponse.ok) {
+                const error = await urlResponse.text();
+                return { ...base, extractionStatus: 'error', note: `Upload failed: ${error}` };
+            }
+            
+            const { uploadUrl, key } = await urlResponse.json();
+            
+            // Step 2: Upload file directly to R2 (bypasses Vercel payload limit)
+            const uploadResponse = await fetch(uploadUrl, {
+                method: 'PUT',
+                headers: { 
+                    'Content-Type': file.type
+                },
+                body: file
+            });
+            
+            if (!uploadResponse.ok) {
+                const error = await uploadResponse.text();
+                return { ...base, extractionStatus: 'error', note: `R2 upload failed: ${error}` };
+            }
+            
+            console.log('✅ File uploaded directly to R2:', key);
+            return { ...base, r2Key: key, extractionStatus: 'ok' };
         }
         catch (err) {
             return { ...base, extractionStatus: 'error', note: err.message };
         }
     }
-    if (file.type === 'application/pdf') {
-        if (file.size > MAX_PDF_BYTES) {
-            return { ...base, extractionStatus: 'too-large', note: 'PDF too large to inline' };
-        }
-        try {
-            const dataUrl = await readFileAsDataUrl(file);
-            return { ...base, dataUrl, extractionStatus: 'ok' };
-        }
-        catch (err) {
-            return { ...base, extractionStatus: 'error', note: err.message };
-        }
-    }
+    
+    // Text files: extract content inline
     if (file.size > MAX_INLINE_BYTES) {
         return { ...base, extractionStatus: 'too-large', note: 'File too large to inline' };
     }

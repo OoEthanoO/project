@@ -28,6 +28,33 @@ export const replaceChildren = (tasks, parentId, newChildren) => (tasks || []).m
 export const removeTask = (tasks, id) => (tasks || [])
     .filter((task) => task.id !== id)
     .map((task) => withChildren(task, removeTask(task.children || [], id)));
+
+/**
+ * Collect all R2 keys from a task and its children
+ * @param {Object} task - Task node
+ * @returns {string[]} Array of R2 keys
+ */
+export const collectR2Keys = (task) => {
+    const keys = (task.attachments || [])
+        .filter(a => a.r2Key)
+        .map(a => a.r2Key);
+    
+    const childKeys = (task.children || []).flatMap(collectR2Keys);
+    
+    return [...keys, ...childKeys];
+};
+
+/**
+ * Find a task and collect all its R2 keys before removal
+ * @param {Object[]} tasks - Task list
+ * @param {string} id - Task ID to remove
+ * @returns {string[]} Array of R2 keys to delete
+ */
+export const getR2KeysForTask = (tasks, id) => {
+    const task = findTask(tasks, id);
+    return task ? collectR2Keys(task) : [];
+};
+
 export const removeAIGeneratedChildren = (tasks, parentId) => (tasks || []).map((task) => {
     if (task.id === parentId) {
         return { ...task, children: (task.children || []).filter((c) => c.createdBy !== 'ai') };

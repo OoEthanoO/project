@@ -30,7 +30,23 @@ Turn assignments, exams, and projects into day-by-day plans. Add tasks with due 
   ```
 - The model defaults to Tier 0 (free text-only model). Users can change models in the UI dropdown.
 - Run with `vercel dev` as shown above; `/api/ai/*` calls go to the serverless functions, which forward to OpenRouter with your key.
-- Attachments are stored as metadata for planning context; wire a backend if you need file persistence.
+
+## File storage (Cloudflare R2)
+- Attachments are stored in Cloudflare R2 (S3-compatible storage) to avoid serverless payload limits.
+- **Setup R2:**
+  1. Go to [Cloudflare Dashboard](https://dash.cloudflare.com/) → R2
+  2. Create a bucket (e.g., `yanplanner`)
+  3. Generate API tokens: Manage R2 API Tokens → Create API Token
+  4. Add to `.env`:
+     ```bash
+     R2_ACCOUNT_ID=your-account-id
+     R2_ACCESS_KEY_ID=your-access-key
+     R2_SECRET_ACCESS_KEY=your-secret-key
+     R2_BUCKET_NAME=yanplanner
+     ```
+- **Free tier:** 10GB storage, unlimited egress (no bandwidth fees)
+- Without R2, file uploads will fail. Attachments are required for multimodal AI features.
+
 - No tests included yet; run `npm run lint` once dependencies are installed to type-check the project.
 - The app starts empty; add your own tasks to begin planning.
 

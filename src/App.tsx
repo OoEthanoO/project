@@ -6,7 +6,7 @@ import SimpleListView from './components/SimpleListView';
 import ChatPanel from './components/ChatPanel';
 import AdminPanel from './components/AdminPanel';
 import { ChatMessage, TaskNode } from './types';
-import { addChild, findTask, randomId, removeTask, reorderWithinParent, updateTask } from './lib/task-utils';
+import { addChild, findTask, randomId, removeTask, reorderWithinParent, updateTask, getR2KeysForTask } from './lib/task-utils';
 import { chatWithPlanner, generateSubtasks } from './lib/ai';
 import { useEffect } from 'react';
 import AuthForm from './components/AuthForm';
@@ -321,6 +321,20 @@ const App = () => {
     setShowTaskModal(false);
   };
 
+  const deleteR2Files = async (keys: string[]) => {
+    if (!keys || keys.length === 0) return;
+    try {
+      await fetch('/api/delete-files', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keys })
+      });
+      console.log('Deleted', keys.length, 'files from R2');
+    } catch (err) {
+      console.error('Failed to delete R2 files:', err);
+    }
+  };
+
   const handleUpdateTask = (id: string, updates: Partial<TaskNode>) => {
     setTasks((prev) =>
       updateTask(prev, id, (t) => ({
@@ -535,8 +549,10 @@ const App = () => {
             onDelete={(id) => {
               const ok = window.confirm('Delete this task and all of its subtasks?');
               if (!ok) return;
+              const r2Keys = getR2KeysForTask(tasks, id);
               setTasks((prev) => removeTask(prev, id));
               if (selectedTaskId === id) setSelectedTaskId(null);
+              if (r2Keys.length > 0) deleteR2Files(r2Keys);
             }}
             onUpdate={handleUpdateTask}
             selectedId={selectedTaskId}
@@ -548,8 +564,10 @@ const App = () => {
             onSplit={handleSplit}
             onSelect={setSelectedTaskId}
             onDelete={(id) => {
+              const r2Keys = getR2KeysForTask(tasks, id);
               setTasks((prev) => removeTask(prev, id));
               if (selectedTaskId === id) setSelectedTaskId(null);
+              if (r2Keys.length > 0) deleteR2Files(r2Keys);
             }}
             onUpdate={handleUpdateTask}
             planningIds={planningIds}
@@ -579,7 +597,7 @@ const App = () => {
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <p className="task-title">Add a new task</p>
             <p className="muted">Include due date and uploads. The AI will use them to split accurately.</p>
-            <TaskForm onSubmit={handleAddTask} onCancel={() => setShowTaskModal(false)} />
+            <TaskForm userId={user?.id} balanceCents={balanceCents} onSubmit={handleAddTask} onCancel={() => setShowTaskModal(false)} />
           </div>
         </div>
       )}

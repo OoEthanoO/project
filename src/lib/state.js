@@ -19,10 +19,27 @@ export const fetchState = async (userId) => {
     };
 };
 export const saveState = async (userId, state) => {
+    // Strip dataUrl from attachments to save space (keep r2Key and metadata)
+    const stripDataUrls = (tasks) => {
+        return tasks.map(task => ({
+            ...task,
+            attachments: (task.attachments || []).map(a => {
+                const { dataUrl, ...rest } = a;
+                return rest; // Keep r2Key, name, type, content, etc. but remove dataUrl
+            }),
+            children: stripDataUrls(task.children || [])
+        }));
+    };
+    
+    const cleanedState = {
+        ...state,
+        tasks: stripDataUrls(state.tasks || [])
+    };
+    
     const res = await fetch('/api/state', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, ...state })
+        body: JSON.stringify({ userId, ...cleanedState })
     });
     const data = await handle(res);
     return {

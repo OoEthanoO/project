@@ -1,7 +1,33 @@
 import fetch from 'node-fetch';
 import { priceMap, isFreeModel, supportsFiles, getTierIndex } from '../shared/model-config.js';
+import { downloadFromR2 } from './r2.js';
 
 const formatDate = (date) => date.toISOString().split('T')[0];
+
+// Helper: Convert R2 buffer to data URL
+const bufferToDataUrl = (buffer, contentType) => {
+  const base64 = buffer.toString('base64');
+  return `data:${contentType};base64,${base64}`;
+};
+
+// Helper: Resolve attachment to data URL (from r2Key or existing dataUrl)
+const resolveAttachment = async (attachment) => {
+  if (attachment.dataUrl) {
+    return attachment; // Already has dataUrl
+  }
+  if (attachment.r2Key) {
+    try {
+      const buffer = await downloadFromR2(attachment.r2Key);
+      const dataUrl = bufferToDataUrl(buffer, attachment.contentType || attachment.type);
+      return { ...attachment, dataUrl };
+    } catch (err) {
+      console.error('[ai] R2 download failed:', err.message);
+      return attachment; // Return original without dataUrl
+    }
+  }
+  return attachment;
+};
+
 
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY;
 const OPENROUTER_BASE_URL = process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1/chat/completions';
@@ -42,6 +68,12 @@ const summarizeAttachments = (attachments = [], maxItems = 3, maxChars = 800) =>
 
 const callOpenRouter = async ({ messages, modelId, plugins }) => {
   ensureKey();
+  
+  console.log('\n=== AI REQUEST ===');
+  console.log('Model:', modelId);
+  console.log('Messages:', JSON.stringify(messages, null, 2));
+  console.log('=================\n');
+  
   const res = await fetch(OPENROUTER_BASE_URL, {
     method: 'POST',
     headers: {
@@ -64,6 +96,10 @@ const callOpenRouter = async ({ messages, modelId, plugins }) => {
   const data = await res.json();
   const content = data?.choices?.[0]?.message?.content;
   if (!content) throw new Error('OpenRouter returned empty content.');
+  
+  console.log('\n=== AI RESPONSE ===');
+  console.log('Content:', content);
+  console.log('==================\n');
   const usage = data?.usage || {};
   const modelUsed = data?.model || modelId;
 
@@ -103,24 +139,42 @@ export const generateSubtasks = async ({ task, conversation = [], globalInstruct
     .slice(0, 3)
     .map((a) => `${a.name || 'file'}:\n${(a.content || '').slice(0, 800)}`)
     .join('\n---\n');
-  const imageParts =
-    supportsFilesFlag &&
-    (task.attachments || [])
-      .filter((a) => a.dataUrl && a.dataUrl.startsWith('data:image'))
-      .slice(0, 4)
-      .map((a) => ({ type: 'image_url', image_url: { url: a.dataUrl } })) || [];
-  const pdfParts =
-    supportsFilesFlag &&
-    (task.attachments || [])
-      .filter((a) => a.dataUrl && a.dataUrl.startsWith('data:application/pdf'))
-      .slice(0, 2)
-      .map((a) => ({
-        type: 'file',
-        file: {
-          filename: a.name || 'document.pdf',
-          file_data: a.dataUrl
-        }
-      })) || [];
+  
+  // Resolve attachments from R2 if needed
+  console.log('[generateSubtasks] Task attachments:', task.attachments);
+  console.log('[generateSubtasks] Model supports files:', supportsFilesFlag);
+  
+  const imageAttachments = (task.attachments || [])
+    .filter((a) => (a.dataUrl && a.dataUrl.startsWith('data:image')) || (a.r2Key && a.contentType?.startsWith('image/')))
+    .slice(0, 4);
+  const pdfAttachments = (task.attachments || [])
+    .filter((a) => (a.dataUrl && a.dataUrl.startsWith('data:application/pdf')) || (a.r2Key && a.contentType === 'application/pdf'))
+    .slice(0, 2);
+  
+  console.log('[generateSubtasks] Found image attachments:', imageAttachments.length);
+  console.log('[generateSubtasks] Found pdf attachments:', pdfAttachments.length);
+  
+  const resolvedImages = supportsFilesFlag ? await Promise.all(imageAttachments.map(resolveAttachment)) : [];
+  const resolvedPdfs = supportsFilesFlag ? await Promise.all(pdfAttachments.map(resolveAttachment)) : [];
+  
+  console.log('[generateSubtasks] Resolved images:', resolvedImages.length);
+  console.log('[generateSubtasks] Resolved pdfs:', resolvedPdfs.length);
+  
+  const imageParts = resolvedImages
+    .filter((a) => a.dataUrl && a.dataUrl.startsWith('data:image'))
+    .map((a) => ({ type: 'image_url', image_url: { url: a.dataUrl } }));
+  const pdfParts = resolvedPdfs
+    .filter((a) => a.dataUrl && a.dataUrl.startsWith('data:application/pdf'))
+    .map((a) => ({
+      type: 'file',
+      file: {
+        filename: a.name || 'document.pdf',
+        file_data: a.dataUrl
+      }
+    }));
+  
+  console.log('[generateSubtasks] Final imageParts:', imageParts.length);
+  console.log('[generateSubtasks] Final pdfParts:', pdfParts.length);
 
   const promptText = [
     'Split the given task into concrete, daily-size subtasks.',
@@ -283,19 +337,23 @@ export const chatWithPlanner = async ({ prompt, tasks, globalInstruction, select
     ? allAttachments.filter((a) => {
         const nameMatch = requestedFiles.some((name) => (a.name || '').toLowerCase() === (name || '').toLowerCase());
         const hasContent = a.dataUrl && (a.dataUrl.startsWith('data:image') || a.dataUrl.startsWith('data:application/pdf'));
-        return nameMatch && hasContent;
+        const hasR2Key = a.r2Key && (a.contentType?.startsWith('image/') || a.contentType === 'application/pdf');
+        return nameMatch && (hasContent || hasR2Key);
       })
     : [];
   
   console.log('[ai/chat] allowedFiles:', allowedFiles.map(a => a.name || 'unnamed'));
   
+  // Resolve files from R2 if needed
+  const resolvedFiles = await Promise.all(allowedFiles.map(resolveAttachment));
+  
   const imageParts =
-    allowedFiles
+    resolvedFiles
       .filter((a) => a.dataUrl && a.dataUrl.startsWith('data:image'))
       .slice(0, 3)
       .map((a) => ({ type: 'image_url', image_url: { url: a.dataUrl } })) || [];
   const pdfParts =
-    allowedFiles
+    resolvedFiles
       .filter((a) => a.dataUrl && a.dataUrl.startsWith('data:application/pdf'))
       .slice(0, 2)
       .map((a) => ({

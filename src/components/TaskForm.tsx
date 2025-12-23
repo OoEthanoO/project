@@ -7,18 +7,30 @@ type Props = {
   onSubmit: (task: TaskNode) => void;
   parentId?: string | null;
   onCancel?: () => void;
+  userId?: string; // For R2 file uploads
+  balanceCents?: number; // For balance check
 };
 
-const TaskForm = ({ onSubmit, parentId = null, onCancel }: Props) => {
+const TaskForm = ({ onSubmit, parentId = null, onCancel, userId, balanceCents = 0 }: Props) => {
   const [title, setTitle] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [startDate, setStartDate] = useState('');
   const [description, setDescription] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [attachError, setAttachError] = useState('');
+  
+  const hasMinBalance = balanceCents >= 50;
 
   const handleFiles = async (files: FileList | null) => {
     if (!files) return;
+    if (!userId) {
+      setAttachError('You must be logged in to upload files.');
+      return;
+    }
+    if (!hasMinBalance) {
+      setAttachError('File uploads require a minimum balance of $0.50. Please top up your account.');
+      return;
+    }
     const allowed = ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'gif'];
     const incoming = Array.from(files);
     const disallowed = incoming.filter((f) => {
@@ -37,7 +49,7 @@ const TaskForm = ({ onSubmit, parentId = null, onCancel }: Props) => {
       setAttachError('Files must be 10 MB or smaller. Please compress or split the PDF.');
       return;
     }
-    const extracted = await Promise.all(incoming.map((file) => extractAttachment(file)));
+    const extracted = await Promise.all(incoming.map((file) => extractAttachment(file, userId)));
     setAttachments((prev) => [...prev, ...extracted as Attachment[]]);
   };
 
@@ -121,7 +133,13 @@ const TaskForm = ({ onSubmit, parentId = null, onCancel }: Props) => {
           accept=".pdf,.jpg,.jpeg,.png,.webp,.gif"
           multiple
           onChange={(e) => handleFiles(e.target.files)}
+          disabled={!hasMinBalance}
         />
+        {!hasMinBalance && (
+          <p className="muted" style={{ color: '#f88', fontSize: 12, margin: '4px 0' }}>
+            File uploads require a minimum balance of $0.50. Please top up your account.
+          </p>
+        )}
         <p className="muted" style={{ fontSize: 12, margin: '4px 0' }}>
           Supported: PDF, JPG, JPEG, PNG, WEBP, GIF. Maximum 10 MB per file. Convert other files (e.g., DOCX/PPTX) to PDF before attaching.
         </p>
