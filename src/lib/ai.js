@@ -3,6 +3,23 @@ import { apiCall } from './api-client.js';
 
 const apiSplit = '/api/ai/split';
 const apiChat = '/api/ai/chat';
+
+/**
+ * @typedef {import('../types').TaskNode} TaskNode
+ * @typedef {import('../types').ChatMessage} ChatMessage
+ */
+
+/**
+ * Generate subtasks for a given task using AI
+ * @param {Object} params
+ * @param {TaskNode} params.task - The task to split
+ * @param {TaskNode[]} [params.ancestors] - Parent tasks for context
+ * @param {ChatMessage[]} params.conversation - Chat history
+ * @param {string} [params.globalInstruction] - Global instruction
+ * @param {string} [params.modelId] - AI model ID
+ * @param {string} params.userId - User ID
+ * @returns {Promise<TaskNode[]>}
+ */
 export const generateSubtasks = async ({ task, ancestors, conversation, globalInstruction, modelId, userId }) => {
     const res = await apiCall(apiSplit, {
         method: 'POST',
@@ -28,6 +45,17 @@ export const generateSubtasks = async ({ task, ancestors, conversation, globalIn
         createdAt: new Date().toISOString()
     }));
 };
+
+/**
+ * Chat with the AI planner
+ * @param {string} prompt - User's message
+ * @param {TaskNode[]} tasks - All tasks
+ * @param {string} [globalInstruction] - Global instruction
+ * @param {string | null} [selectedTaskId] - Selected task ID
+ * @param {string} [modelId] - AI model ID
+ * @param {string} [userId] - User ID
+ * @returns {Promise<ChatMessage>}
+ */
 export const chatWithPlanner = async (prompt, tasks, globalInstruction, selectedTaskId, modelId, userId) => {
     const res = await apiCall(apiChat, {
         method: 'POST',
@@ -39,8 +67,10 @@ export const chatWithPlanner = async (prompt, tasks, globalInstruction, selected
         throw new Error(errData.error || 'Failed to reach AI service');
     }
     const data = await res.json();
+    console.log('[client] Full API response:', data);
     const content = data.content || '';
     const attachmentsUsed = data.attachmentsUsed || [];
+    console.log('[client] AI response data:', { content: content.slice(0, 50), attachmentsUsed });
     return {
         id: randomId(),
         role: 'ai',
