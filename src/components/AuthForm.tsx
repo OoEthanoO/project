@@ -12,10 +12,12 @@ const AuthForm = ({ onLogin, onRegister }: Props) => {
   const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(true);
   const [error, setError] = useState('');
+  const [info, setInfo] = useState('');
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
+    setInfo('');
     if (!email.trim() || !password.trim()) {
       setError('Email and password required');
       return;
@@ -23,15 +25,24 @@ const AuthForm = ({ onLogin, onRegister }: Props) => {
     try {
       if (mode === 'login') {
         await onLogin(email.trim(), password.trim(), remember);
+        setInfo('');
       } else {
         if (!name.trim()) {
           setError('Name required');
           return;
         }
         await onRegister(email.trim(), password.trim(), name.trim(), remember);
+        setMode('login');
+        setInfo('Check your email to confirm your account, then sign in.');
       }
     } catch (err) {
-      setError((err as Error).message);
+      const message = (err as Error).message || 'Login failed';
+      if (message.toLowerCase().includes('verify your email')) {
+        setInfo('We sent a verification email. Please confirm your address, then sign in.');
+        setError('');
+      } else {
+        setError(message);
+      }
     }
   };
 
@@ -66,6 +77,11 @@ const AuthForm = ({ onLogin, onRegister }: Props) => {
             Remember me
           </label>
         </div>
+        {info && (
+          <p className="muted" style={{ color: '#5bd0ff', marginTop: 8, fontWeight: 600 }}>
+            {info}
+          </p>
+        )}
         {error && (
           <p className="muted" style={{ color: '#f88', marginTop: 8 }}>
             {error}
@@ -81,6 +97,7 @@ const AuthForm = ({ onLogin, onRegister }: Props) => {
             onClick={() => {
               setMode((m) => (m === 'login' ? 'register' : 'login'));
               setError('');
+              setInfo('');
             }}
           >
             {mode === 'login' ? 'Need an account?' : 'Have an account?'}

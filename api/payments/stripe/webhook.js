@@ -1,5 +1,6 @@
 import { handleStripeWebhook } from '../../../server/stripe.js';
 import { readRaw, sendJson } from '../../_lib/http.js';
+import { logRequest } from '../../_lib/log.js';
 
 export const config = {
   api: {
@@ -8,6 +9,7 @@ export const config = {
 };
 
 export default async function handler(req, res) {
+  logRequest(req, res);
   if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
   try {
     const raw = await readRaw(req);

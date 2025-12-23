@@ -1,8 +1,10 @@
 import { generateSubtasks } from '../../server/ai.js';
 import { getBalance, chargeUsage } from '../../server/billing.js';
 import { sendJson, readJson } from '../_lib/http.js';
+import { logRequest } from '../_lib/log.js';
 
 export default async function handler(req, res) {
+  logRequest(req, res);
   if (req.method !== 'POST') {
     return sendJson(res, 405, { error: 'Method not allowed' });
   }

@@ -1,7 +1,9 @@
 import { topUpBalance } from '../../server/billing.js';
 import { readJson, sendJson } from '../_lib/http.js';
+import { logRequest } from '../_lib/log.js';
 
 export default async function handler(req, res) {
+  logRequest(req, res);
   if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
   try {
     const { userId, amountCents, reference, idempotencyKey } = await readJson(req);

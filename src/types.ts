@@ -42,4 +42,5 @@ export type AccountUser = {
   name: string;
   token: string;
   balanceCents?: number;
+  emailVerified?: boolean;
 };

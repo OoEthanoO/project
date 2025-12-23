@@ -14,6 +14,8 @@ model User {
   passwordSalt  String
   createdAt     DateTime @default(now())
   balanceCents  Int      @default(0)
+  emailVerified Boolean  @default(false)
+  verificationToken String?
   state         UserState?
   topups        TopUpTransaction[]
   usageCharges  UsageTransaction[]

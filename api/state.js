@@ -1,5 +1,6 @@
 import { getUserState, saveUserState } from '../server/state.js';
 import { readJson, sendJson } from './_lib/http.js';
+import { logRequest } from './_lib/log.js';
 
 const getUserId = (req) => {
   const url = new URL(req.url || '', 'http://localhost');
@@ -7,6 +8,7 @@ const getUserId = (req) => {
 };
 
 export default async function handler(req, res) {
+  logRequest(req, res);
   try {
     if (req.method === 'GET') {
       const userId = getUserId(req);

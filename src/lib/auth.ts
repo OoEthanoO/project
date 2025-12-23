@@ -43,6 +43,10 @@ const callAuth = async (path: '/register' | '/login', payload: any): Promise<Acc
 
 export const register = async (email: string, password: string, name: string, remember: boolean): Promise<AccountUser> => {
   const user = await callAuth('/register', { email, password, name });
+  // Do not log in until verified
+  if (!user.emailVerified) {
+    throw new Error('Verification email sent. Please check your inbox before signing in.');
+  }
   saveSession({ token: user.token, user }, remember);
   return user;
 };

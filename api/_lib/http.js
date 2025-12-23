@@ -4,6 +4,12 @@ export const sendJson = (res, status, body) => {
   res.end(JSON.stringify(body));
 };
 
+export const sendHtml = (res, status, html) => {
+  res.statusCode = status;
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.end(html);
+};
+
 export const readJson = (req) =>
   new Promise((resolve, reject) => {
     let data = '';

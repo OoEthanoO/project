@@ -1,7 +1,10 @@
+import '../_lib/env.js';
 import { loginUser } from '../../server/auth.js';
 import { readJson, sendJson } from '../_lib/http.js';
+import { logRequest } from '../_lib/log.js';
 
 export default async function handler(req, res) {
+  logRequest(req, res);
   if (req.method !== 'POST') {
     return sendJson(res, 405, { error: 'Method not allowed' });
   }
@@ -11,6 +14,7 @@ export default async function handler(req, res) {
     const user = await loginUser(email, password);
     return sendJson(res, 200, user);
   } catch (err) {
+    console.error('[api/auth/login] error', err);
     return sendJson(res, 400, { error: (err && err.message) || 'Login failed' });
   }
 }
