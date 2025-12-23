@@ -555,6 +555,14 @@ const App = () => {
             planningIds={planningIds}
           />
         )}
+        <footer style={{ marginTop: '40px', paddingTop: '20px', borderTop: '1px solid #e0e0e0', textAlign: 'center' }}>
+          <p className="muted" style={{ fontSize: 12, margin: '4px 0' }}>
+            © {new Date().getFullYear()} YanPlanner. All rights reserved.
+          </p>
+          <p className="muted" style={{ fontSize: 12, margin: '4px 0' }}>
+            For bugs, feature requests, or support: <a href="mailto:ethanxucoder@gmail.com" style={{ color: '#1976d2' }}>ethanxucoder@gmail.com</a>
+          </p>
+        </footer>
       </div>
       <div className={`slideover ${showChat ? 'open' : ''}`}>
         <div className="slideover-panel panel">
