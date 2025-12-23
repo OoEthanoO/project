@@ -156,6 +156,11 @@ app.get('/api/auth/verify', async (req, res) => {
 
 app.get('/api/state', async (req, res) => {
   try {
+    // Handle version check (no userId required)
+    if (req.query.version !== undefined) {
+      return res.json({ version: process.env.npm_package_version || 'unknown' });
+    }
+    
     const userId = req.query.userId;
     if (!userId) return res.status(400).json({ error: 'Missing userId' });
     const state = await getUserState(userId);
