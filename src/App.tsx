@@ -138,7 +138,7 @@ const App = () => {
     let cancelled = false;
     const check = async () => {
       try {
-        const res = await fetch('/api/version');
+        const res = await fetch('/api/state?version');
         if (!res.ok) return;
         const data = await res.json();
         if (cancelled) return;
@@ -324,8 +324,8 @@ const App = () => {
   const deleteR2Files = async (keys: string[]) => {
     if (!keys || keys.length === 0) return;
     try {
-      await fetch('/api/delete-files', {
-        method: 'POST',
+      await fetch('/api/state', {
+        method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ keys })
       });

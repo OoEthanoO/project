@@ -1,27 +1,22 @@
 import fetch from 'node-fetch';
 import { priceMap, isFreeModel, supportsFiles, getTierIndex } from '../shared/model-config.js';
-import { downloadFromR2 } from './r2.js';
 
 const formatDate = (date) => date.toISOString().split('T')[0];
 
-// Helper: Convert R2 buffer to data URL
-const bufferToDataUrl = (buffer, contentType) => {
-  const base64 = buffer.toString('base64');
-  return `data:${contentType};base64,${base64}`;
-};
-
-// Helper: Resolve attachment to data URL (from r2Key or existing dataUrl)
+// Helper: Resolve attachment to data URL or presigned URL
 const resolveAttachment = async (attachment) => {
   if (attachment.dataUrl) {
     return attachment; // Already has dataUrl
   }
   if (attachment.r2Key) {
     try {
-      const buffer = await downloadFromR2(attachment.r2Key);
-      const dataUrl = bufferToDataUrl(buffer, attachment.contentType || attachment.type);
-      return { ...attachment, dataUrl };
+      // Use presigned URL instead of downloading - OpenRouter can fetch directly
+      const { getSignedDownloadUrl } = await import('./r2.js');
+      const signedUrl = await getSignedDownloadUrl(attachment.r2Key, 3600); // 1 hour expiry
+      console.log('[ai] Generated presigned URL for:', attachment.r2Key);
+      return { ...attachment, dataUrl: signedUrl }; // OpenRouter accepts https:// URLs
     } catch (err) {
-      console.error('[ai] R2 download failed:', err.message);
+      console.error('[ai] Failed to generate presigned URL:', err.message);
       return attachment; // Return original without dataUrl
     }
   }
@@ -161,10 +156,10 @@ export const generateSubtasks = async ({ task, conversation = [], globalInstruct
   console.log('[generateSubtasks] Resolved pdfs:', resolvedPdfs.length);
   
   const imageParts = resolvedImages
-    .filter((a) => a.dataUrl && a.dataUrl.startsWith('data:image'))
+    .filter((a) => a.dataUrl) // Can be data: URL or https: URL
     .map((a) => ({ type: 'image_url', image_url: { url: a.dataUrl } }));
   const pdfParts = resolvedPdfs
-    .filter((a) => a.dataUrl && a.dataUrl.startsWith('data:application/pdf'))
+    .filter((a) => a.dataUrl) // Can be data: URL or https: URL
     .map((a) => ({
       type: 'file',
       file: {
@@ -349,12 +344,12 @@ export const chatWithPlanner = async ({ prompt, tasks, globalInstruction, select
   
   const imageParts =
     resolvedFiles
-      .filter((a) => a.dataUrl && a.dataUrl.startsWith('data:image'))
+      .filter((a) => a.dataUrl && (a.dataUrl.startsWith('data:image') || a.dataUrl.startsWith('https://')))
       .slice(0, 3)
       .map((a) => ({ type: 'image_url', image_url: { url: a.dataUrl } })) || [];
   const pdfParts =
     resolvedFiles
-      .filter((a) => a.dataUrl && a.dataUrl.startsWith('data:application/pdf'))
+      .filter((a) => a.dataUrl && (a.dataUrl.startsWith('data:application/pdf') || a.dataUrl.startsWith('https://')))
       .slice(0, 2)
       .map((a) => ({
         type: 'file',

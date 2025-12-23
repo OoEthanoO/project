@@ -14,9 +14,9 @@
     "preview": "vite preview",
     "lint": "tsc --noEmit",
     "server": "node server/index.js",
-    "start": "node server/index.js",
+    "start": "prisma generate && node server/index.js",
     "prisma:generate": "prisma generate",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate || true"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.958.0",
