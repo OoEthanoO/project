@@ -9,8 +9,7 @@ type Props = {
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
   onUpdate: (id: string, updates: Partial<TaskNode>) => void;
-  planning?: boolean;
-  planningTaskId?: string | null;
+  planningIds?: Set<string>;
 };
 
 type FlatTask = TaskNode & { depth: number; order: number };
@@ -24,7 +23,7 @@ const flattenTasks = (tasks: TaskNode[], depth = 0, orderRef = { value: 0 }): Fl
   });
 };
 
-const SimpleListView = ({ tasks, onSplit, onSelect, onDelete, onUpdate, planning = false, planningTaskId = null }: Props) => {
+const SimpleListView = ({ tasks, onSplit, onSelect, onDelete, onUpdate, planningIds = new Set() }: Props) => {
   const flat = flattenTasks(tasks || []).sort((a, b) => {
     if (!a.dueDate && !b.dueDate) {
       // No due date: preserve tree order
@@ -55,16 +54,14 @@ const ListItem = ({
   onSelect,
   onDelete,
   onUpdate,
-  planning,
-  planningTaskId
+  planningIds
 }: {
   task: FlatTask;
   onSplit: (id: string) => void;
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
   onUpdate: (id: string, updates: Partial<TaskNode>) => void;
-  planning?: boolean;
-  planningTaskId?: string | null;
+  planningIds?: Set<string>;
 }) => {
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(task.title);
@@ -196,10 +193,10 @@ const ListItem = ({
         <button
           className="primary"
           onClick={() => onSplit(task.id)}
-          disabled={!canSplit || (planning && planningTaskId === task.id)}
+          disabled={!canSplit || planningIds?.has(task.id)}
           title={!task.dueDate ? 'Add a due date to split.' : undefined}
         >
-          {planning && planningTaskId === task.id ? 'Planning…' : 'AI split'}
+          {planningIds?.has(task.id) ? 'Planning…' : 'AI split'}
         </button>
         <button
           className="secondary"

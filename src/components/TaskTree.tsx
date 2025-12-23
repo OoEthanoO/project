@@ -12,8 +12,7 @@ type Props = {
   onDelete: (id: string) => void;
   onUpdate: (id: string, updates: Partial<TaskNode>) => void;
   selectedId?: string | null;
-  planning?: boolean;
-  planningTaskId?: string | null;
+  planningIds?: Set<string>;
 };
 
 const TaskTree = ({
@@ -24,8 +23,7 @@ const TaskTree = ({
   onDelete,
   onUpdate,
   selectedId,
-  planning = false,
-  planningTaskId = null
+  planningIds = new Set()
 }: Props) => {
   const safeTasks = tasks || [];
   return (
@@ -41,8 +39,7 @@ const TaskTree = ({
           onDelete={onDelete}
           onUpdate={onUpdate}
           selectedId={selectedId}
-          planning={planning}
-          planningTaskId={planningTaskId}
+          planningIds={planningIds}
         />
       ))}
     </div>
@@ -71,8 +68,7 @@ const TaskNodeView = ({
   onDelete,
   onUpdate,
   selectedId,
-  planning,
-  planningTaskId
+  planningIds
 }: {
   task: TaskNode;
   depth: number;
@@ -82,8 +78,7 @@ const TaskNodeView = ({
   onDelete: (id: string) => void;
   selectedId?: string | null;
   onUpdate: (id: string, updates: Partial<TaskNode>) => void;
-  planning?: boolean;
-  planningTaskId?: string | null;
+  planningIds?: Set<string>;
 }) => {
   const [showSubForm, setShowSubForm] = useState(false);
   const selected = selectedId === task.id;
@@ -212,10 +207,10 @@ const TaskNodeView = ({
         <button
           className="primary"
           onClick={() => onSplit(task.id)}
-          disabled={!canSplit || isDone || (planning && planningTaskId === task.id)}
+          disabled={!canSplit || isDone || planningIds?.has(task.id)}
           title={!canSplit ? 'Due today or overdue; adjust due date before splitting.' : undefined}
         >
-          {planningTaskId === task.id && planning ? 'Planning…' : 'AI split'}
+          {planningIds?.has(task.id) ? 'Planning…' : 'AI split'}
         </button>
         <button className="secondary" onClick={() => setShowSubForm((v) => !v)}>
           {showSubForm ? 'Close form' : 'Add subtask'}
@@ -273,8 +268,7 @@ const TaskNodeView = ({
               onDelete={onDelete}
               onUpdate={onUpdate}
               selectedId={selectedId}
-              planning={planning}
-              planningTaskId={planningTaskId}
+              planningIds={planningIds}
             />
           ))}
         </div>

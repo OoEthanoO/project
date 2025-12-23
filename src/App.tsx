@@ -36,9 +36,8 @@ const isDueTodayOrPast = (dueDate?: string) => {
 const App = () => {
   const [tasks, setTasks] = useState<TaskNode[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
-  const [planning, setPlanning] = useState(false);
+  const [planningIds, setPlanningIds] = useState<Set<string>>(new Set());
   const [chatting, setChatting] = useState(false);
-  const [planningTaskId, setPlanningTaskId] = useState<string | null>(null);
   const [showChat, setShowChat] = useState(false);
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [showInstructionModal, setShowInstructionModal] = useState(false);
@@ -317,8 +316,11 @@ const App = () => {
       ]);
       return;
     }
-    setPlanning(true);
-    setPlanningTaskId(id);
+    setPlanningIds((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
     try {
       const subtasks = await generateSubtasks({ task, conversation: messages, globalInstruction, modelId, userId: user.id });
       setTasks((prev) =>
@@ -329,8 +331,11 @@ const App = () => {
       );
       if (subtasks[0]) setSelectedTaskId(subtasks[0].id);
     } finally {
-      setPlanning(false);
-      setPlanningTaskId(null);
+      setPlanningIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
     }
   };
 
@@ -437,8 +442,7 @@ const App = () => {
             }}
             onUpdate={handleUpdateTask}
             selectedId={selectedTaskId}
-            planning={planning}
-            planningTaskId={planningTaskId}
+            planningIds={planningIds}
           />
         ) : (
           <SimpleListView
@@ -450,8 +454,7 @@ const App = () => {
               if (selectedTaskId === id) setSelectedTaskId(null);
             }}
             onUpdate={handleUpdateTask}
-            planning={planning}
-            planningTaskId={planningTaskId}
+            planningIds={planningIds}
           />
         )}
       </div>
@@ -460,7 +463,7 @@ const App = () => {
           <ChatPanel
             messages={messages}
             onSend={handleChat}
-            busy={planning || chatting}
+            busy={planningIds.size > 0 || chatting}
             onClear={() => setMessages([initialCoachMessage()])}
           />
         </div>
