@@ -1,0 +1,5 @@
+# Exclude server-side API folder from Vercel deployment
+# All API requests are routed to Koyeb backend via vercel.json rewrite
+api/
+server/
+prisma/
