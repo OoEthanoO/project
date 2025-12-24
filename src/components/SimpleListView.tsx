@@ -24,25 +24,30 @@ const flattenTasks = (tasks: TaskNode[], depth = 0, orderRef = { value: 0 }): Fl
   });
 };
 
-const SimpleListView = ({ tasks, onSplit, onSelect, onDelete, onUpdate, planningIds = new Set(), onEditModeChange }: Props) => {
-  const flat = flattenTasks(tasks || []).sort((a, b) => {
-    if (!a.dueDate && !b.dueDate) {
-      // No due date: preserve tree order
-      return a.order - b.order;
-    }
-    if (!a.dueDate) return 1;
-    if (!b.dueDate) return -1;
-    const dueCmp = a.dueDate.localeCompare(b.dueDate);
-    if (dueCmp !== 0) return dueCmp;
-    // same due date: deeper depth first
-    if (a.depth !== b.depth) return b.depth - a.depth;
-    // same depth: preserve tree order
+const compareTasks = (a: FlatTask, b: FlatTask) => {
+  if (!a.dueDate && !b.dueDate) {
+    // No due date: preserve tree order
     return a.order - b.order;
-  });
+  }
+  if (!a.dueDate) return 1;
+  if (!b.dueDate) return -1;
+  const dueCmp = a.dueDate.localeCompare(b.dueDate);
+  if (dueCmp !== 0) return dueCmp;
+  // same due date: deeper depth first
+  if (a.depth !== b.depth) return b.depth - a.depth;
+  // same depth: preserve tree order
+  return a.order - b.order;
+};
+
+const SimpleListView = ({ tasks, onSplit, onSelect, onDelete, onUpdate, planningIds = new Set(), onEditModeChange }: Props) => {
+  const flat = flattenTasks(tasks || []);
+  const openAndProgress = flat.filter((t) => t.status !== 'done').sort(compareTasks);
+  const completed = flat.filter((t) => t.status === 'done').sort((a, b) => -compareTasks(a, b));
+  const sorted = [...openAndProgress, ...completed];
 
   return (
     <div className="task-list">
-      {flat.map((task) => (
+      {sorted.map((task) => (
         <ListItem key={task.id} task={task} onSplit={onSplit} onSelect={onSelect} onDelete={onDelete} onUpdate={onUpdate} onEditModeChange={onEditModeChange} />
       ))}
     </div>
