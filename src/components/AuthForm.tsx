@@ -79,9 +79,15 @@ const AuthForm = ({ onLogin, onRegister, notice, onClearNotice }: Props) => {
             <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
           </div>
         </div>
-        <div style={{ marginTop: 10, display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} id="remember" />
-          <label htmlFor="remember" className="muted">
+        <div style={{ marginTop: 10, display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'flex-start' }}>
+          <input 
+            type="checkbox" 
+            checked={remember} 
+            onChange={(e) => setRemember(e.target.checked)} 
+            id="remember"
+            style={{ cursor: 'pointer', marginTop: 2 }}
+          />
+          <label htmlFor="remember" className="muted" style={{ cursor: 'pointer', margin: 0 }}>
             Remember me
           </label>
         </div>
