@@ -178,6 +178,7 @@ export const generateSubtasks = async ({ task, ancestors = [], conversation = []
     'Interpret all due dates as deadlines at the START of that day (00:00), so finish work by the prior day if needed.',
     'Avoid assigning a subtask due on the same day you set it (or on the start date) unless absolutely necessary, because the start of that day has already passed.',
     'Balance the workload across the available days; do not frontload or backload. If work is in units (pages/chapters/problems), distribute units evenly so daily effort is consistent.',
+    'IMPORTANT: Ensure completeness and symmetry. If you create a subtask for "first half" or "part 1" of something, you MUST also create corresponding subtasks for "second half" or remaining parts. Never leave partial work incomplete.',
     'Do NOT emit or invent a startDate for subtasks; only use dueDate when needed.',
     getTierIndex(modelId) === 3
       ? 'Use deep reasoning: anticipate risks, add QA/validation steps, and suggest buffers.'
