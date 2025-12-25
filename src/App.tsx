@@ -96,6 +96,7 @@ const App = () => {
         const loadedModelId = state.config?.modelId || import.meta.env.VITE_OPENAI_MODEL || defaultModel;
         setModelId(getValidModelOrDefault(loadedModelId));
         setSelectedTaskId(state.selectedTaskId || null);
+        setCollapsedTaskIds(new Set(state.config?.collapsedTaskIds || []));
         try {
           const bal = await fetchBalance(user.id);
           if (!cancelled) setBalanceCents(bal);
@@ -122,12 +123,12 @@ const App = () => {
       saveState(user.id, {
         tasks,
         chat: messages,
-        config: { globalInstruction, modelId },
+        config: { globalInstruction, modelId, collapsedTaskIds: Array.from(collapsedTaskIds) },
         selectedTaskId
       }).catch((err) => console.error('Failed to save state', err));
     }, 300);
     return () => clearTimeout(timer);
-  }, [user, hydrated, tasks, messages, globalInstruction, modelId, selectedTaskId]);
+  }, [user, hydrated, tasks, messages, globalInstruction, modelId, selectedTaskId, collapsedTaskIds]);
 
   useEffect(() => {
     if (!selectedTaskId && tasks[0]) {
