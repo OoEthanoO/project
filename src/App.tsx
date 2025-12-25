@@ -147,28 +147,43 @@ const App = () => {
         if (!res.ok) return;
         const data = await res.json();
         if (cancelled) return;
-        // Don't reload if user is actively working (modal open or chatting)
-        if (serverVersion && data.version && data.version !== serverVersion) {
-          if (showTaskModal || showInstructionModal || showTopUpModal || chatting) {
+        const newVersion = data.version || 'unknown';
+        
+        // First time: just store the version
+        if (!serverVersion) {
+          console.log('[version] Initial version:', newVersion);
+          setServerVersion(newVersion);
+          return;
+        }
+        
+        // Subsequent checks: compare and reload if changed
+        if (newVersion !== serverVersion) {
+          if (showTaskModal || showInstructionModal || showTopUpModal || chatting || isEditingTask) {
             console.log('[version] Server updated but postponing reload (user is active)');
+            // Set a flag to reload when user becomes idle
+            setTimeout(() => {
+              if (!showTaskModal && !showInstructionModal && !showTopUpModal && !chatting && !isEditingTask) {
+                console.log('[version] User now idle, reloading...');
+                window.location.reload();
+              }
+            }, 5000);
             return;
           }
-          console.log('[version] Server updated, reloading...');
+          console.log(`[version] Server updated from ${serverVersion} to ${newVersion}, reloading...`);
           window.location.reload();
           return;
         }
-        setServerVersion(data.version || 'unknown');
-      } catch {
-        // ignore
+      } catch (err) {
+        console.error('[version] Check failed:', err);
       }
     };
     check();
-    const id = setInterval(check, 30000);
+    const id = setInterval(check, 20000); // Check every 20s (more frequent)
     return () => {
       cancelled = true;
       clearInterval(id);
     };
-  }, [serverVersion, showTaskModal, showInstructionModal, showTopUpModal, chatting]);
+  }, [serverVersion, showTaskModal, showInstructionModal, showTopUpModal, chatting, isEditingTask]);
 
   // Lightweight polling to stay in sync across devices/browsers
   useEffect(() => {
