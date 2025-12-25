@@ -77,6 +77,49 @@ export const reorderWithinParent = (tasks, targetId, direction) => {
     };
     return move(tasks || []);
 };
+
+/**
+ * Move a task to the top of its level
+ * @param {Object[]} tasks - Task list
+ * @param {string} targetId - Task ID to move
+ * @returns {Object[]} New task list with task moved to top
+ */
+export const moveTaskToTop = (tasks, targetId) => {
+    const move = (list) => {
+        const idx = list.findIndex((t) => t.id === targetId);
+        if (idx === -1)
+            return list.map((t) => withChildren(t, move(t.children || [])));
+        if (idx === 0)
+            return list;
+        const newList = [...list];
+        const task = newList.splice(idx, 1)[0];
+        newList.unshift(task);
+        return newList;
+    };
+    return move(tasks || []);
+};
+
+/**
+ * Move a task to the bottom of its level
+ * @param {Object[]} tasks - Task list
+ * @param {string} targetId - Task ID to move
+ * @returns {Object[]} New task list with task moved to bottom
+ */
+export const moveTaskToBottom = (tasks, targetId) => {
+    const move = (list) => {
+        const idx = list.findIndex((t) => t.id === targetId);
+        if (idx === -1)
+            return list.map((t) => withChildren(t, move(t.children || [])));
+        if (idx === list.length - 1)
+            return list;
+        const newList = [...list];
+        const task = newList.splice(idx, 1)[0];
+        newList.push(task);
+        return newList;
+    };
+    return move(tasks || []);
+};
+
 export const randomId = () => (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2));
 /**
  * Collect all parent tasks up the chain from a given task ID

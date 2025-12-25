@@ -6,7 +6,7 @@ import SimpleListView from './components/SimpleListView';
 import ChatPanel from './components/ChatPanel';
 import AdminPanel from './components/AdminPanel';
 import { ChatMessage, TaskNode } from './types';
-import { addChild, findTask, randomId, removeTask, reorderWithinParent, updateTask, getR2KeysForTask, getAncestors } from './lib/task-utils';
+import { addChild, findTask, randomId, removeTask, reorderWithinParent, updateTask, getR2KeysForTask, getAncestors, moveTaskToTop, moveTaskToBottom } from './lib/task-utils';
 import { chatWithPlanner, generateSubtasks } from './lib/ai';
 import { useEffect } from 'react';
 import AuthForm from './components/AuthForm';
@@ -282,13 +282,21 @@ const App = () => {
         case 'arrowup':
           if (activeTab === 'tree' && selectedTaskId) {
             e.preventDefault();
-            setTasks((prev) => reorderWithinParent(prev, selectedTaskId, 'up'));
+            if (e.shiftKey) {
+              setTasks((prev) => moveTaskToTop(prev, selectedTaskId));
+            } else {
+              setTasks((prev) => reorderWithinParent(prev, selectedTaskId, 'up'));
+            }
           }
           break;
         case 'arrowdown':
           if (activeTab === 'tree' && selectedTaskId) {
             e.preventDefault();
-            setTasks((prev) => reorderWithinParent(prev, selectedTaskId, 'down'));
+            if (e.shiftKey) {
+              setTasks((prev) => moveTaskToBottom(prev, selectedTaskId));
+            } else {
+              setTasks((prev) => reorderWithinParent(prev, selectedTaskId, 'down'));
+            }
           }
           break;
         default:
