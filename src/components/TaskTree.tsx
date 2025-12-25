@@ -14,6 +14,8 @@ type Props = {
   selectedId?: string | null;
   planningIds?: Set<string>;
   onEditModeChange?: (isEditing: boolean) => void;
+  collapsedIds?: Set<string>;
+  onToggleCollapsed?: (id: string) => void;
 };
 
 const TaskTree = ({
@@ -25,7 +27,9 @@ const TaskTree = ({
   onUpdate,
   selectedId,
   planningIds = new Set(),
-  onEditModeChange
+  onEditModeChange,
+  collapsedIds = new Set(),
+  onToggleCollapsed
 }: Props) => {
   const safeTasks = tasks || [];
   return (
@@ -43,6 +47,8 @@ const TaskTree = ({
           selectedId={selectedId}
           planningIds={planningIds}
           onEditModeChange={onEditModeChange}
+          collapsedIds={collapsedIds}
+          onToggleCollapsed={onToggleCollapsed}
         />
       ))}
     </div>
@@ -72,7 +78,9 @@ const TaskNodeView = ({
   onUpdate,
   selectedId,
   planningIds,
-  onEditModeChange
+  onEditModeChange,
+  collapsedIds,
+  onToggleCollapsed
 }: {
   task: TaskNode;
   depth: number;
@@ -84,8 +92,9 @@ const TaskNodeView = ({
   onUpdate: (id: string, updates: Partial<TaskNode>) => void;
   planningIds?: Set<string>;
   onEditModeChange?: (isEditing: boolean) => void;
+  collapsedIds?: Set<string>;
+  onToggleCollapsed?: (id: string) => void;
 }) => {
-  const [collapsed, setCollapsed] = useState(false);
   const [showSubForm, setShowSubForm] = useState(false);
   const selected = selectedId === task.id;
   const canSplit = !isDueTodayOrPast(task.dueDate);
@@ -96,6 +105,7 @@ const TaskNodeView = ({
   const [description, setDescription] = useState(task.description || '');
   const [attachments, setAttachments] = useState<Attachment[]>(task.attachments || []);
   const isDone = task.status === 'done';
+  const isCollapsed = collapsedIds?.has(task.id) ?? false;
 
   return (
     <div
@@ -115,10 +125,10 @@ const TaskNodeView = ({
               style={{ padding: '4px 8px', minWidth: 0, width: 32 }}
               onClick={(e) => {
                 e.stopPropagation();
-                setCollapsed((v) => !v);
+                onToggleCollapsed?.(task.id);
               }}
             >
-              {collapsed ? '›' : '∨'}
+              {isCollapsed ? '›' : '∨'}
             </button>
           ) : null}
           {editing ? (
@@ -292,7 +302,7 @@ const TaskNodeView = ({
           />
         </div>
       )}
-      {(task.children ?? []).length > 0 && !collapsed && (
+      {(task.children ?? []).length > 0 && !isCollapsed && (
         <div className="subtasks">
           {(task.children ?? []).map((child, idx) => (
             <TaskNodeView
@@ -307,6 +317,8 @@ const TaskNodeView = ({
               selectedId={selectedId}
               planningIds={planningIds}
               onEditModeChange={onEditModeChange}
+              collapsedIds={collapsedIds}
+              onToggleCollapsed={onToggleCollapsed}
             />
           ))}
         </div>

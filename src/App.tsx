@@ -39,6 +39,7 @@ const isDueTodayOrPast = (dueDate?: string) => {
 const App = () => {
   const [tasks, setTasks] = useState<TaskNode[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [collapsedTaskIds, setCollapsedTaskIds] = useState<Set<string>>(new Set());
   const [planningIds, setPlanningIds] = useState<Set<string>>(new Set());
   const [chatting, setChatting] = useState(false);
   const [showChat, setShowChat] = useState(false);
@@ -571,6 +572,18 @@ const App = () => {
             selectedId={selectedTaskId}
             planningIds={planningIds}
             onEditModeChange={setIsEditingTask}
+            collapsedIds={collapsedTaskIds}
+            onToggleCollapsed={(id) => {
+              setCollapsedTaskIds((prev) => {
+                const next = new Set(prev);
+                if (next.has(id)) {
+                  next.delete(id);
+                } else {
+                  next.add(id);
+                }
+                return next;
+              });
+            }}
           />
         ) : (
           <SimpleListView
