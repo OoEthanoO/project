@@ -55,14 +55,14 @@ app.use((req, res, next) => {
 
 app.post('/api/ai/split', async (req, res) => {
   try {
-    const { task, ancestors = [], conversation, globalInstruction, modelId, userId } = req.body;
+    const { task, ancestors = [], conversation, globalInstruction, modelId, userId, clientLocalDate, clientTimeZone } = req.body;
     if (!userId) return res.status(400).json({ error: 'Missing userId' });
     const isFree = isFreeModel(modelId);
     if (!isFree) {
       const bal = await getBalance(userId);
       if (bal < 50) return res.status(402).json({ error: 'Minimum balance of $0.50 required for paid models' });
     }
-    const result = await generateSubtasks({ task, ancestors, conversation, globalInstruction, modelId });
+    const result = await generateSubtasks({ task, ancestors, conversation, globalInstruction, modelId, clientLocalDate, clientTimeZone });
     if (result.totalCostUsd > 0) {
       const amountCents = Math.ceil(result.totalCostUsd * 100 * 2); // 100% revenue -> double charge
       await chargeUsage({
@@ -82,14 +82,14 @@ app.post('/api/ai/split', async (req, res) => {
 
 app.post('/api/ai/chat', async (req, res) => {
   try {
-    const { prompt, tasks, globalInstruction, selectedTaskId, modelId, userId } = req.body;
+    const { prompt, tasks, globalInstruction, selectedTaskId, modelId, userId, clientLocalDate, clientTimeZone } = req.body;
     if (!userId) return res.status(400).json({ error: 'Missing userId' });
     const isFree = isFreeModel(modelId);
     if (!isFree) {
       const bal = await getBalance(userId);
       if (bal < 50) return res.status(402).json({ error: 'Minimum balance of $0.50 required for paid models' });
     }
-    const result = await chatWithPlanner({ prompt, tasks, globalInstruction, selectedTaskId, modelId });
+    const result = await chatWithPlanner({ prompt, tasks, globalInstruction, selectedTaskId, modelId, clientLocalDate, clientTimeZone });
     if (result.totalCostUsd > 0) {
       const amountCents = Math.ceil(result.totalCostUsd * 100 * 2); // 100% revenue -> double charge
       await chargeUsage({

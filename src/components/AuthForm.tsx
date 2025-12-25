@@ -57,7 +57,7 @@ const AuthForm = ({ onLogin, onRegister, notice, onClearNotice }: Props) => {
           <p className="muted">Access your planner with email + password.</p>
         </div>
       </div>
-      <form className="task-card" onSubmit={handleSubmit} style={{ borderStyle: 'dashed' }}>
+      <form className="task-card auth-form" onSubmit={handleSubmit} style={{ borderStyle: 'dashed' }}>
         {notice && (
           <div className="muted" style={{ color: '#5bd0ff', marginBottom: 10, fontWeight: 600 }}>
             {notice}
@@ -79,7 +79,7 @@ const AuthForm = ({ onLogin, onRegister, notice, onClearNotice }: Props) => {
             <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
           </div>
         </div>
-        <div style={{ marginTop: 10, display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'flex-start' }}>
+        <div className="auth-remember">
           <input 
             type="checkbox" 
             checked={remember} 
@@ -92,16 +92,16 @@ const AuthForm = ({ onLogin, onRegister, notice, onClearNotice }: Props) => {
           </label>
         </div>
         {info && (
-          <p className="muted" style={{ color: '#5bd0ff', marginTop: 8, fontWeight: 600 }}>
+          <p className="muted" style={{ color: '#5bd0ff', marginTop: 8, fontWeight: 600, margin: 0 }}>
             {info}
           </p>
         )}
         {error && (
-          <p className="muted" style={{ color: '#f88', marginTop: 8 }}>
+          <p className="muted" style={{ color: '#f88', marginTop: 8, margin: 0 }}>
             {error}
           </p>
         )}
-        <div className="task-actions" style={{ marginTop: 12 }}>
+        <div className="task-actions auth-actions" style={{ marginTop: 12 }}>
           <button className="primary" type="submit">
             {mode === 'login' ? 'Login' : 'Register'}
           </button>

@@ -153,6 +153,38 @@ body {
   flex-wrap: wrap;
 }
 
+/* Auth screen specific layout */
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.auth-remember {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-start;
+  width: auto;
+  max-width: fit-content;
+}
+
+.auth-remember input[type="checkbox"] {
+  width: auto;
+  flex-shrink: 0;
+}
+
+.auth-remember label {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.auth-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 button {
   border: none;
   border-radius: 10px;

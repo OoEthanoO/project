@@ -114,17 +114,11 @@ const callOpenRouter = async ({ messages, modelId, plugins }) => {
   return { content, usage, modelUsed, totalCostUsd: totalCost };
 };
 
-export const generateSubtasks = async ({ task, ancestors = [], conversation = [], globalInstruction, modelId }) => {
+export const generateSubtasks = async ({ task, ancestors = [], conversation = [], globalInstruction, modelId, clientLocalDate, clientTimeZone }) => {
   const supportsFilesFlag = supportsFiles(modelId);
-  const now = new Date();
-  let start = now;
-  if (task.startDate) {
-    const parsed = Date.parse(task.startDate);
-    if (!Number.isNaN(parsed)) {
-      start = new Date(parsed);
-    }
-  }
-  const startDateText = task.startDate ? String(task.startDate) : 'not provided (default to start now)';
+  // Use client-provided local date for "today" contexts
+  const todayStr = clientLocalDate || formatDate(new Date());
+  const startDateText = task.startDate ? String(task.startDate) : todayStr;
   const recentChat = conversation
     .slice(-4)
     .map((c) => `${c.role === 'user' ? 'User' : 'AI'}: ${c.content}`)
@@ -196,7 +190,7 @@ export const generateSubtasks = async ({ task, ancestors = [], conversation = []
     globalInstruction ? `Global instruction: ${globalInstruction}` : '',
     '',
     ancestors.length > 0 ? `Task hierarchy (root → parent → current): ${hierarchyString}` : '',
-    `Planning start date: ${formatDate(start)}.`,
+    `Planning start date: ${startDateText}.`,
     `Task title: ${task.title}`,
     `Task due: ${task.dueDate ?? 'not provided'}`,
     `Task earliest start: ${startDateText}`,
@@ -217,7 +211,7 @@ export const generateSubtasks = async ({ task, ancestors = [], conversation = []
 
   const { content, usage, modelUsed, totalCostUsd } = await callOpenRouter({
     messages: [
-      { role: 'system', content: 'You are a planning assistant that outputs strict JSON. No prose.' },
+      { role: 'system', content: `You are a planning assistant that outputs strict JSON. No prose. ${clientTimeZone ? `Assume user's timezone: ${clientTimeZone}.` : ''}` },
       { role: 'user', content: userContent }
     ],
     modelId,
@@ -241,9 +235,10 @@ export const generateSubtasks = async ({ task, ancestors = [], conversation = []
   return { items: mapped, usage, modelUsed, totalCostUsd };
 };
 
-export const chatWithPlanner = async ({ prompt, tasks, globalInstruction, selectedTaskId, modelId }) => {
+export const chatWithPlanner = async ({ prompt, tasks, globalInstruction, selectedTaskId, modelId, clientLocalDate, clientTimeZone }) => {
   const supportsFilesFlag = supportsFiles(modelId);
   const now = new Date();
+  const todayStr = clientLocalDate || formatDate(now);
   const flatten = (list, depth = 0, orderRef = { value: 0 }) =>
     (list || []).flatMap((t) => {
       const order = orderRef.value++;
@@ -293,7 +288,7 @@ export const chatWithPlanner = async ({ prompt, tasks, globalInstruction, select
     {
       type: 'text',
       text: [
-        `Today: ${formatDate(now)}`,
+        `Today: ${todayStr}`,
         horizon ? `Open items: ${horizon}` : 'No tasks yet.',
         taskLines.length ? `Task context:\n${taskLines.join('\n')}` : '',
         focused
@@ -369,7 +364,7 @@ export const chatWithPlanner = async ({ prompt, tasks, globalInstruction, select
     {
       type: 'text',
       text: [
-        `Today: ${formatDate(now)}`,
+        `Today: ${todayStr}`,
         horizon ? `Open items: ${horizon}` : 'No tasks yet.',
         taskLines.length ? `Task context:\n${taskLines.join('\n')}` : '',
         focused
@@ -390,7 +385,7 @@ export const chatWithPlanner = async ({ prompt, tasks, globalInstruction, select
 
   const { content, usage, modelUsed, totalCostUsd } = await callOpenRouter({
     messages: [
-      { role: 'system', content: system },
+      { role: 'system', content: `${system} ${clientTimeZone ? `Assume user's timezone: ${clientTimeZone}.` : ''}` },
       { role: 'user', content: userContent }
     ],
     modelId,
