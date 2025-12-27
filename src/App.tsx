@@ -688,6 +688,7 @@ const App = () => {
               if (!ok) return;
               permanentlyDeleteFromTrash(id);
             }}
+            onNavigateToPlan={() => setActiveTab('tree')}
           />
         )}
         <footer style={{ marginTop: '40px', paddingTop: '20px', borderTop: '1px solid #e0e0e0', textAlign: 'center' }}>
