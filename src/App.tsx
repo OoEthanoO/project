@@ -196,9 +196,14 @@ const App = () => {
   // Lightweight polling to stay in sync across devices/browsers
   useEffect(() => {
     if (!user || !hydrated) return;
+    let consecutiveFailures = 0;
     const interval = setInterval(async () => {
       // Don't poll if user is actively working (prevents interrupting task editing, chat, or other modals)
       if (showTaskModal || showInstructionModal || showTopUpModal || chatting || isEditingTask) {
+        return;
+      }
+      // Skip polling when offline or during network transitions
+      if (typeof navigator !== 'undefined' && navigator && navigator.onLine === false) {
         return;
       }
       try {
@@ -247,7 +252,11 @@ const App = () => {
           console.error('Polling: failed to refresh balance', e);
         }
       } catch (err) {
-        console.error('Polling: failed to refresh state', err);
+        consecutiveFailures += 1;
+        // Log only the first failure to reduce console noise during auto-reloads or brief outages
+        if (consecutiveFailures === 1) {
+          console.error('Polling: failed to refresh state', err);
+        }
       }
     }, 10000); // 10s poll
     return () => clearInterval(interval);
