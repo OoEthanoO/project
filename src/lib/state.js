@@ -16,7 +16,8 @@ export const fetchState = async (userId) => {
         trash: data.trash || [],
         config: {
             globalInstruction: data.config?.globalInstruction || '',
-            modelId: data.config?.modelId
+            modelId: data.config?.modelId,
+            collapsedTaskIds: data.config?.collapsedTaskIds || []
         },
         selectedTaskId: data.selectedTaskId ?? null
     };
@@ -52,7 +53,8 @@ export const saveState = async (userId, state) => {
         trash: data.trash || [],
         config: {
             globalInstruction: data.config?.globalInstruction || '',
-            modelId: data.config?.modelId
+            modelId: data.config?.modelId,
+            collapsedTaskIds: data.config?.collapsedTaskIds || []
         },
         selectedTaskId: data.selectedTaskId ?? null
     };
