@@ -4,7 +4,7 @@ const defaults = () => ({
   tasks: [],
   chat: [],
   trash: [],
-  config: { globalInstruction: '', modelId: null },
+  config: { globalInstruction: '', modelId: null, collapsedTaskIds: [] },
   selectedTaskId: null
 });
 
@@ -16,7 +16,11 @@ export const getUserState = async (userId) => {
     tasks: (state.tasks ?? []) ?? [],
     chat: (state.chat ?? []) ?? [],
     trash: (state.trash ?? []) ?? [],
-    config: { globalInstruction: state.config?.globalInstruction || '', modelId: state.config?.modelId },
+    config: {
+      globalInstruction: state.config?.globalInstruction || '',
+      modelId: state.config?.modelId,
+      collapsedTaskIds: state.config?.collapsedTaskIds || []
+    },
     selectedTaskId: state.selectedTaskId ?? null
   };
 };
