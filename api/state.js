@@ -12,7 +12,9 @@ const version =
   process.env.VERCEL_GIT_COMMIT_SHA ||
   process.env.VERCEL_DEPLOYMENT_ID ||
   process.env.BUILD_ID ||
-  'local';
+  process.env.KOYEB_DEPLOYMENT_ID ||
+  process.env.KOYEB_REPLICA_ID ||
+  `local-${Date.now()}`;
 
 export default async function handler(req, res) {
   logRequest(req, res);

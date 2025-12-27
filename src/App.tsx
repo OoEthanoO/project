@@ -161,6 +161,8 @@ const App = () => {
           return;
         }
         
+        console.log('[version] Current:', serverVersion, 'Server:', newVersion);
+        
         // Subsequent checks: compare and reload if changed
         if (newVersion !== serverVersion) {
           if (showTaskModal || showInstructionModal || showTopUpModal || chatting || isEditingTask) {
@@ -183,7 +185,7 @@ const App = () => {
       }
     };
     check();
-    const id = setInterval(check, 20000); // Check every 20s (more frequent)
+    const id = setInterval(check, 10000); // Check every 10s
     return () => {
       cancelled = true;
       clearInterval(id);
