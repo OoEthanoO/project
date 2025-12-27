@@ -16,6 +16,8 @@ type Props = {
   onEditModeChange?: (isEditing: boolean) => void;
   collapsedIds?: Set<string>;
   onToggleCollapsed?: (id: string) => void;
+  userId?: string;
+  balanceCents?: number;
 };
 
 const TaskTree = ({
@@ -29,7 +31,9 @@ const TaskTree = ({
   planningIds = new Set(),
   onEditModeChange,
   collapsedIds = new Set(),
-  onToggleCollapsed
+  onToggleCollapsed,
+  userId,
+  balanceCents
 }: Props) => {
   const safeTasks = tasks || [];
   return (
@@ -49,6 +53,8 @@ const TaskTree = ({
           onEditModeChange={onEditModeChange}
           collapsedIds={collapsedIds}
           onToggleCollapsed={onToggleCollapsed}
+          userId={userId}
+          balanceCents={balanceCents}
         />
       ))}
     </div>
@@ -80,7 +86,9 @@ const TaskNodeView = ({
   planningIds,
   onEditModeChange,
   collapsedIds,
-  onToggleCollapsed
+  onToggleCollapsed,
+  userId,
+  balanceCents
 }: {
   task: TaskNode;
   depth: number;
@@ -94,6 +102,8 @@ const TaskNodeView = ({
   onEditModeChange?: (isEditing: boolean) => void;
   collapsedIds?: Set<string>;
   onToggleCollapsed?: (id: string) => void;
+  userId?: string;
+  balanceCents?: number;
 }) => {
   const [showSubForm, setShowSubForm] = useState(false);
   const selected = selectedId === task.id;
@@ -299,6 +309,8 @@ const TaskNodeView = ({
             onSubmit={(newTask) => onAddSubtask(newTask)}
             parentId={task.id}
             onCancel={() => setShowSubForm(false)}
+            userId={userId}
+            balanceCents={balanceCents}
           />
         </div>
       )}
@@ -319,6 +331,8 @@ const TaskNodeView = ({
               onEditModeChange={onEditModeChange}
               collapsedIds={collapsedIds}
               onToggleCollapsed={onToggleCollapsed}
+              userId={userId}
+              balanceCents={balanceCents}
             />
           ))}
         </div>

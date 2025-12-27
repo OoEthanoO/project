@@ -100,7 +100,8 @@ const App = () => {
         const loadedModelId = state.config?.modelId || import.meta.env.VITE_OPENAI_MODEL || defaultModel;
         setModelId(getValidModelOrDefault(loadedModelId));
         setSelectedTaskId(state.selectedTaskId || null);
-        setCollapsedTaskIds(new Set(state.config?.collapsedTaskIds || []));
+        // Ensure collapsed IDs are typed as Set<string>
+        setCollapsedTaskIds(new Set<string>((state.config?.collapsedTaskIds || []) as string[]));
         try {
           const bal = await fetchBalance(user.id);
           if (!cancelled) setBalanceCents(bal);
@@ -229,9 +230,16 @@ const App = () => {
         const newModelId = state.config?.modelId || import.meta.env.VITE_OPENAI_MODEL || defaultModel;
         const validatedModelId = getValidModelOrDefault(newModelId);
         const newSelectedId = state.selectedTaskId || null;
+        // Type collapsed IDs explicitly to avoid Set<unknown>
+        const newCollapsedIds: Set<string> = new Set<string>((state.config?.collapsedTaskIds || []) as string[]);
         setGlobalInstruction((prev) => prev === newInstruction ? prev : newInstruction);
         setModelId((prev) => prev === validatedModelId ? prev : validatedModelId);
         setSelectedTaskId((prev) => prev === newSelectedId ? prev : newSelectedId);
+        setCollapsedTaskIds((prev) => {
+          const prevArray = Array.from(prev).sort().join(',');
+          const newArray = Array.from(newCollapsedIds).sort().join(',');
+          return prevArray === newArray ? prev : newCollapsedIds;
+        });
         try {
           const bal = await fetchBalance(user.id);
           setBalanceCents((prev) => prev === bal ? prev : bal);
@@ -654,6 +662,8 @@ const App = () => {
                 return next;
               });
             }}
+            userId={user?.id}
+            balanceCents={balanceCents}
           />
         ) : activeTab === 'list' ? (
           <SimpleListView
