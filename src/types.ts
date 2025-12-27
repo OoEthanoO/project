@@ -25,6 +25,8 @@ export type TaskNode = {
   status?: 'open' | 'in-progress' | 'done';
   createdBy: 'user' | 'ai';
   createdAt?: string;
+  deletedAt?: string;
+  trashedFromParentId?: string | null;
 };
 
 export type ChatMessage = {

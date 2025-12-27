@@ -13,6 +13,7 @@ export const fetchState = async (userId) => {
     return {
         tasks: data.tasks || [],
         chat: data.chat || [],
+        trash: data.trash || [],
         config: {
             globalInstruction: data.config?.globalInstruction || '',
             modelId: data.config?.modelId
@@ -22,7 +23,7 @@ export const fetchState = async (userId) => {
 };
 export const saveState = async (userId, state) => {
     // Strip dataUrl from attachments to save space (keep r2Key and metadata)
-    const stripDataUrls = (tasks) => {
+    const stripDataUrls = (tasks = []) => {
         return tasks.map(task => ({
             ...task,
             attachments: (task.attachments || []).map(a => {
@@ -35,7 +36,8 @@ export const saveState = async (userId, state) => {
     
     const cleanedState = {
         ...state,
-        tasks: stripDataUrls(state.tasks || [])
+        tasks: stripDataUrls(state.tasks || []),
+        trash: stripDataUrls(state.trash || [])
     };
     
     const res = await apiCall('/api/state', {
@@ -47,6 +49,7 @@ export const saveState = async (userId, state) => {
     return {
         tasks: data.tasks || [],
         chat: data.chat || [],
+        trash: data.trash || [],
         config: {
             globalInstruction: data.config?.globalInstruction || '',
             modelId: data.config?.modelId

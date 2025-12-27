@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Routes, Route, useNavigate } from 'react-router-dom';
 import TaskForm from './components/TaskForm';
 import TaskTree from './components/TaskTree';
+import TrashCan from './components/TrashCan';
 import SimpleListView from './components/SimpleListView';
 import ChatPanel from './components/ChatPanel';
 import AdminPanel from './components/AdminPanel';
@@ -38,6 +39,7 @@ const isDueTodayOrPast = (dueDate?: string) => {
 
 const App = () => {
   const [tasks, setTasks] = useState<TaskNode[]>([]);
+  const [trash, setTrash] = useState<TaskNode[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [collapsedTaskIds, setCollapsedTaskIds] = useState<Set<string>>(new Set());
   const [planningIds, setPlanningIds] = useState<Set<string>>(new Set());
@@ -45,7 +47,7 @@ const App = () => {
   const [showChat, setShowChat] = useState(false);
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [showInstructionModal, setShowInstructionModal] = useState(false);
-  const [activeTab, setActiveTab] = useState<'tree' | 'list'>('tree');
+  const [activeTab, setActiveTab] = useState<'tree' | 'list' | 'trash'>('tree');
   const [messages, setMessages] = useState<ChatMessage[]>([initialCoachMessage()]);
   const [user, setUser] = useState(() => currentUser());
   const [hydrated, setHydrated] = useState(false);
@@ -77,6 +79,7 @@ const App = () => {
       if (!user) {
         setHydrated(false);
         setTasks([]);
+        setTrash([]);
         setMessages([initialCoachMessage()]);
         setGlobalInstruction('');
         setModelId(defaultModel);
@@ -87,6 +90,7 @@ const App = () => {
         const state = await fetchState(user.id);
         if (cancelled) return;
         setTasks(state.tasks || []);
+        setTrash(state.trash || []);
         const chat = state.chat || [];
         setMessages((prev) => {
           if (chat.length >= prev.length) return chat.length ? chat : [initialCoachMessage()];
@@ -122,13 +126,14 @@ const App = () => {
     const timer = setTimeout(() => {
       saveState(user.id, {
         tasks,
+        trash,
         chat: messages,
         config: { globalInstruction, modelId, collapsedTaskIds: Array.from(collapsedTaskIds) },
         selectedTaskId
       }).catch((err) => console.error('Failed to save state', err));
     }, 300);
     return () => clearTimeout(timer);
-  }, [user, hydrated, tasks, messages, globalInstruction, modelId, selectedTaskId, collapsedTaskIds]);
+  }, [user, hydrated, tasks, trash, messages, globalInstruction, modelId, selectedTaskId, collapsedTaskIds]);
 
   useEffect(() => {
     if (!selectedTaskId && tasks[0]) {
@@ -201,6 +206,11 @@ const App = () => {
           if (JSON.stringify(prev) === JSON.stringify(newTasks)) return prev;
           return newTasks;
         });
+        setTrash((prev) => {
+          const newTrash = state.trash || [];
+          if (JSON.stringify(prev) === JSON.stringify(newTrash)) return prev;
+          return newTrash;
+        });
         const chat = state.chat || [];
         // Avoid overwriting with shorter/empty chat if the server didn't persist yet
         setMessages((prev) => {
@@ -250,6 +260,8 @@ const App = () => {
   const handleLogout = () => {
     logout();
     setUser(null);
+    setTasks([]);
+    setTrash([]);
     setBalanceCents(0);
     setAuthNotice('');
   };
@@ -364,6 +376,44 @@ const App = () => {
     }
   };
 
+  const softDeleteTask = (id: string) => {
+    const taskToTrash = findTask(tasks, id);
+    if (!taskToTrash) return;
+    const copy = typeof structuredClone === 'function' ? structuredClone(taskToTrash) : (JSON.parse(JSON.stringify(taskToTrash)) as TaskNode);
+    const trashedCopy: TaskNode = {
+      ...copy,
+      deletedAt: new Date().toISOString(),
+      trashedFromParentId: taskToTrash.parentId ?? null
+    };
+    setTasks((prev) => removeTask(prev, id));
+    setTrash((prev) => [trashedCopy, ...prev]);
+    if (selectedTaskId === id) setSelectedTaskId(null);
+  };
+
+  const restoreTask = (task: TaskNode) => {
+    const parentCandidate = task.trashedFromParentId ?? task.parentId ?? null;
+    const parentExists = parentCandidate ? findTask(tasks, parentCandidate) : undefined;
+    const restoredParentId = parentExists ? parentCandidate : null;
+    const restoredTask: TaskNode = {
+      ...task,
+      deletedAt: undefined,
+      trashedFromParentId: undefined,
+      parentId: restoredParentId
+    };
+    setTrash((prev) => removeTask(prev, task.id));
+    setTasks((prev) => addChild(prev, restoredParentId, restoredTask));
+    setSelectedTaskId(restoredTask.id);
+  };
+
+  const permanentlyDeleteFromTrash = (id: string) => {
+    const target = findTask(trash, id);
+    if (!target) return;
+    const r2Keys = getR2KeysForTask(trash, id);
+    setTrash((prev) => removeTask(prev, id));
+    if (selectedTaskId === id) setSelectedTaskId(null);
+    if (r2Keys.length > 0) deleteR2Files(r2Keys);
+  };
+
   const handleUpdateTask = (id: string, updates: Partial<TaskNode>) => {
     setTasks((prev) =>
       updateTask(prev, id, (t) => ({
@@ -438,6 +488,7 @@ const App = () => {
       // Persist chat immediately to reduce chance of losing the last response
       saveState(user.id, {
         tasks,
+        trash,
         chat: [...messages, userMsg, aiMessage],
         config: { globalInstruction, modelId },
         selectedTaskId
@@ -464,6 +515,7 @@ const App = () => {
     try {
       await saveState(user.id, {
         tasks,
+        trash,
         chat: clearedMessages,
         config: { globalInstruction, modelId },
         selectedTaskId
@@ -560,6 +612,9 @@ const App = () => {
           <button className={`tab ${activeTab === 'list' ? 'active' : ''}`} onClick={() => setActiveTab('list')}>
             List by due date
           </button>
+          <button className={`tab ${activeTab === 'trash' ? 'active' : ''}`} onClick={() => setActiveTab('trash')}>
+            Trash
+          </button>
         </div>
         <div className="header" style={{ paddingTop: 12 }}>
           <div>
@@ -577,12 +632,9 @@ const App = () => {
             onAddSubtask={handleAddTask}
             onSelect={setSelectedTaskId}
             onDelete={(id) => {
-              const ok = window.confirm('Delete this task and all of its subtasks?');
+              const ok = window.confirm('Move this task and its subtasks to trash? Attachments stay until permanently deleted.');
               if (!ok) return;
-              const r2Keys = getR2KeysForTask(tasks, id);
-              setTasks((prev) => removeTask(prev, id));
-              if (selectedTaskId === id) setSelectedTaskId(null);
-              if (r2Keys.length > 0) deleteR2Files(r2Keys);
+              softDeleteTask(id);
             }}
             onUpdate={handleUpdateTask}
             selectedId={selectedTaskId}
@@ -601,20 +653,29 @@ const App = () => {
               });
             }}
           />
-        ) : (
+        ) : activeTab === 'list' ? (
           <SimpleListView
             tasks={tasks}
             onSplit={handleSplit}
             onSelect={setSelectedTaskId}
             onDelete={(id) => {
-              const r2Keys = getR2KeysForTask(tasks, id);
-              setTasks((prev) => removeTask(prev, id));
-              if (selectedTaskId === id) setSelectedTaskId(null);
-              if (r2Keys.length > 0) deleteR2Files(r2Keys);
+              const ok = window.confirm('Move this task and its subtasks to trash? Attachments stay until permanently deleted.');
+              if (!ok) return;
+              softDeleteTask(id);
             }}
             onUpdate={handleUpdateTask}
             planningIds={planningIds}
             onEditModeChange={setIsEditingTask}
+          />
+        ) : (
+          <TrashCan
+            items={trash}
+            onRestore={(task) => restoreTask(task)}
+            onDeleteForever={(id) => {
+              const ok = window.confirm('Permanently delete this task and all attachments? This cannot be undone.');
+              if (!ok) return;
+              permanentlyDeleteFromTrash(id);
+            }}
           />
         )}
         <footer style={{ marginTop: '40px', paddingTop: '20px', borderTop: '1px solid #e0e0e0', textAlign: 'center' }}>

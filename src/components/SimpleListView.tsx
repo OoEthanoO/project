@@ -235,7 +235,7 @@ const ListItem = ({
             onDelete(task.id);
           }}
         >
-          Delete
+          Trash
         </button>
       </div>
     </div>

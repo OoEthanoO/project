@@ -133,7 +133,7 @@ const TaskNodeView = ({
           ) : null}
           {editing ? (
             <>
-              <div className="form-row">
+              Trash
                 <div>
                   <label className="muted">Title</label>
                   <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" />

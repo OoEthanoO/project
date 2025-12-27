@@ -30,9 +30,9 @@ export default async function handler(req, res) {
       return sendJson(res, 200, state);
     }
     if (req.method === 'POST') {
-      const { userId, tasks, chat, config, selectedTaskId } = await readJson(req);
+      const { userId, tasks, chat, trash, config, selectedTaskId } = await readJson(req);
       if (!userId) return sendJson(res, 400, { error: 'Missing userId' });
-      const state = await saveUserState(userId, { tasks, chat, config, selectedTaskId });
+      const state = await saveUserState(userId, { tasks, chat, trash, config, selectedTaskId });
       return sendJson(res, 200, state);
     }
     if (req.method === 'DELETE') {

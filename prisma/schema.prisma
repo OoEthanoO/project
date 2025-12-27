@@ -26,6 +26,7 @@ model UserState {
   tasks          Json     @default("[]")
   chat           Json     @default("[]")
   config         Json     @default("{}")
+  trash          Json     @default("[]")
   selectedTaskId String?
   updatedAt      DateTime @updatedAt
   createdAt      DateTime @default(now())
