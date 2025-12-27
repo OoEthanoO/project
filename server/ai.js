@@ -116,9 +116,12 @@ const callOpenRouter = async ({ messages, modelId, plugins }) => {
 
 export const generateSubtasks = async ({ task, ancestors = [], conversation = [], globalInstruction, modelId, clientLocalDate, clientTimeZone }) => {
   const supportsFilesFlag = supportsFiles(modelId);
-  // Use client-provided local date for "today" contexts
-  const todayStr = clientLocalDate || formatDate(new Date());
-  const startDateText = task.startDate ? String(task.startDate) : todayStr;
+  // Use the later of task.startDate and today to avoid planning in the past
+  const todayDate = clientLocalDate ? new Date(clientLocalDate) : new Date();
+  const parsedStartDate = task.startDate ? new Date(task.startDate) : null;
+  const hasValidStartDate = parsedStartDate && !Number.isNaN(parsedStartDate.getTime());
+  const effectiveStartDate = hasValidStartDate && parsedStartDate > todayDate ? parsedStartDate : todayDate;
+  const startDateText = formatDate(effectiveStartDate);
   const recentChat = conversation
     .slice(-4)
     .map((c) => `${c.role === 'user' ? 'User' : 'AI'}: ${c.content}`)
