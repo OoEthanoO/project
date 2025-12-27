@@ -196,9 +196,9 @@ app.get('/api/state', async (req, res) => {
 
 app.post('/api/state', async (req, res) => {
   try {
-    const { userId, tasks, chat, config, selectedTaskId } = req.body;
+    const { userId, tasks, chat, trash, config, selectedTaskId } = req.body;
     if (!userId) return res.status(400).json({ error: 'Missing userId' });
-    const state = await saveUserState(userId, { tasks, chat, config, selectedTaskId });
+    const state = await saveUserState(userId, { tasks, chat, trash, config, selectedTaskId });
     res.json(state);
   } catch (err) {
     console.error('Failed to save state', err);

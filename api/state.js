@@ -1,3 +1,7 @@
+// DEPRECATED: This serverless route is not used in the current setup.
+// All /api/* requests are rewritten to the Express server (see vercel.json),
+// which serves the same endpoints via server/index.js.
+// This file remains to document previous behavior; prefer editing server/index.js.
 import { getUserState, saveUserState } from '../server/state.js';
 import { deleteMultipleFromR2 } from '../server/r2.js';
 import { readJson, sendJson } from './_lib/http.js';

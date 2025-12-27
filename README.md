@@ -14,13 +14,20 @@ Turn assignments, exams, and projects into day-by-day plans. Add tasks with due 
    ```bash
    npm install
    ```
-2. Run the app with Vercel serverless (preferred for parity with production):
+2. Unified API server (dev + prod):
+   - Both development and production use the same Express server defined in `server/index.js`.
+   - In development, the frontend calls `http://localhost:8787`.
+   - In production (Vercel), `/api/*` is rewritten to your Koyeb app per `vercel.json`, which also serves the same Express app.
+   - The files under `api/` are legacy serverless routes and are not used; see `api/README.md`.
+3. Run locally:
    ```bash
-   VITE_API_ORIGIN=http://localhost:3000 vercel dev --listen 5173
+   # Terminal 1: start the API server
+   npm run server
+
+   # Terminal 2: start the Vite dev server
+   npm run dev
    ```
-   This starts Vite on `5173` and Vercel serverless functions on `3000`; `/api/*` is proxied to the functions.
-   If you want to use the legacy Express server instead, start it separately and set `VITE_API_ORIGIN=http://localhost:8787`.
-3. Open the printed URL (defaults to `http://localhost:5173`).
+   Open http://localhost:5173.
 
 ## AI setup
 - Create a `.env` (Vercel functions read these; the client does not call OpenRouter directly):
@@ -29,7 +36,7 @@ Turn assignments, exams, and projects into day-by-day plans. Add tasks with due 
   # OPENROUTER_BASE_URL=https://openrouter.ai/api/v1/chat/completions # override if needed
   ```
 - The model defaults to Tier 0 (free text-only model). Users can change models in the UI dropdown.
-- Run with `vercel dev` as shown above; `/api/ai/*` calls go to the serverless functions, which forward to OpenRouter with your key.
+- All `/api/ai/*` calls go through the Express server.
 
 ## File storage (Cloudflare R2)
 - Attachments are stored in Cloudflare R2 (S3-compatible storage) to avoid serverless payload limits.
@@ -51,4 +58,4 @@ Turn assignments, exams, and projects into day-by-day plans. Add tasks with due 
 - The app starts empty; add your own tasks to begin planning.
 
 ## Persistence
-- Tasks, chat history, and global instructions are saved in your database via the API (serverless functions). The old localStorage layer has been replaced; ensure `DATABASE_URL` is set for Prisma.
+- Tasks, trash, chat history, and global instructions are saved via the Express API. Ensure `DATABASE_URL` is set for Prisma. The legacy serverless functions in `api/` are deprecated and not invoked.
