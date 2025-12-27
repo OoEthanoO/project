@@ -2,19 +2,19 @@ import { getUserState, saveUserState } from '../server/state.js';
 import { deleteMultipleFromR2 } from '../server/r2.js';
 import { readJson, sendJson } from './_lib/http.js';
 import { logRequest } from './_lib/log.js';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const packageJson = JSON.parse(readFileSync(join(__dirname, '../package.json'), 'utf-8'));
+const version = packageJson.version;
 
 const getUserId = (req) => {
   const url = new URL(req.url || '', 'http://localhost');
   return url.searchParams.get('userId');
 };
-
-const version =
-  process.env.VERCEL_GIT_COMMIT_SHA ||
-  process.env.VERCEL_DEPLOYMENT_ID ||
-  process.env.BUILD_ID ||
-  process.env.KOYEB_DEPLOYMENT_ID ||
-  process.env.KOYEB_REPLICA_ID ||
-  `local-${Date.now()}`;
 
 export default async function handler(req, res) {
   logRequest(req, res);
