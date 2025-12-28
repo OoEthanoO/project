@@ -750,27 +750,6 @@ const App = () => {
               🔄 Restore backup ({backupAvailable.taskCount} tasks)
             </button>
           )}
-          {backupAvailable && backupAvailable.taskCount > 0 && tasks.length === 0 && (
-            <button
-              className="secondary"
-              style={{ borderColor: '#d32f2f', color: '#d32f2f', fontWeight: 500 }}
-              onClick={() => {
-                if (!user) return;
-                const ok = window.confirm('Delete this backup from your device? This cannot be undone.');
-                if (!ok) return;
-                try {
-                  clearBackup(user.id);
-                  setBackupAvailable(null);
-                  alert('Backup deleted.');
-                } catch (e) {
-                  alert('Failed to delete backup: ' + (e instanceof Error ? e.message : 'Unknown error'));
-                }
-              }}
-              title="Delete backup"
-            >
-              🗑️ Delete backup
-            </button>
-          )}
         </div>
         <div className="tabs">
           <button className={`tab ${activeTab === 'tree' ? 'active' : ''}`} onClick={() => setActiveTab('tree')}>
@@ -1011,25 +990,6 @@ const App = () => {
                 }}
               >
                 Restore backup
-              </button>
-              <button
-                className="secondary"
-                onClick={() => {
-                  if (!user) return;
-                  const ok = window.confirm('Delete this backup from your device? This cannot be undone.');
-                  if (!ok) return;
-                  try {
-                    clearBackup(user.id);
-                    setBackupAvailable(null);
-                    setShowBackupModal(false);
-                    alert('Backup deleted.');
-                  } catch (e) {
-                    alert('Failed to delete backup: ' + (e instanceof Error ? e.message : 'Unknown error'));
-                  }
-                }}
-                title="Delete backup"
-              >
-                Delete backup
               </button>
               <button className="secondary" onClick={() => setShowBackupModal(false)}>Close</button>
             </div>
