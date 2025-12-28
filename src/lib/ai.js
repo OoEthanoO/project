@@ -39,7 +39,8 @@ export const generateSubtasks = async ({ task, ancestors, conversation, globalIn
         id: randomId(),
         title: item.title,
         description: item.description || `Auto-planned from "${task.title}".`,
-        dueDate: item.dueDate || task.dueDate,
+        // Keep model-provided dueDate; do not default to parent due to avoid collapsing schedule
+        dueDate: item.dueDate ?? undefined,
         attachments: [],
         children: [],
         parentId: task.id,

@@ -234,7 +234,8 @@ export const generateSubtasks = async ({ task, ancestors = [], conversation = []
   const mapped = items.map((item) => ({
     title: item.title,
     description: item.description || `Auto-planned from "${task.title}".`,
-    dueDate: item.dueDate || task.dueDate
+    // Preserve model-provided dueDate; do not fallback to parent due to avoid collapsing schedule
+    dueDate: item.dueDate ?? null
   }));
   return { items: mapped, usage, modelUsed, totalCostUsd };
 };

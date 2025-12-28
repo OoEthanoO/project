@@ -193,6 +193,7 @@ const App = () => {
     if (!user || !hydrated) return;
     let consecutiveFailures = 0;
     const interval = setInterval(async () => {
+      const startedAt = Date.now();
       // Don't poll if user is actively working (prevents interrupting task editing, chat, or other modals)
       if (showTaskModal || showInstructionModal || showTopUpModal || chatting || isEditingTask) {
         return;
@@ -207,6 +208,9 @@ const App = () => {
       }
       try {
         const state = await fetchState(user.id);
+        if (startedAt < lastUserActionRef.current) {
+          return;
+        }
         // Only update tasks if they actually changed
         setTasks((prev) => {
           const newTasks = state.tasks || [];
@@ -378,6 +382,7 @@ const App = () => {
   }, [tasks]);
 
   const handleAddTask = (task: TaskNode) => {
+    lastUserActionRef.current = Date.now();
     setTasks((prev) => addChild(prev, task.parentId ?? null, task));
     setSelectedTaskId(task.id);
     setShowTaskModal(false);
@@ -399,6 +404,7 @@ const App = () => {
   };
 
   const softDeleteTask = (id: string) => {
+    lastUserActionRef.current = Date.now();
     const taskToTrash = findTask(tasks, id);
     if (!taskToTrash) return;
     const copy = typeof structuredClone === 'function' ? structuredClone(taskToTrash) : (JSON.parse(JSON.stringify(taskToTrash)) as TaskNode);
@@ -413,6 +419,7 @@ const App = () => {
   };
 
   const restoreTask = (task: TaskNode) => {
+    lastUserActionRef.current = Date.now();
     const parentCandidate = task.trashedFromParentId ?? task.parentId ?? null;
     const parentExists = parentCandidate ? findTask(tasks, parentCandidate) : undefined;
     const restoredParentId = parentExists ? parentCandidate : null;
@@ -428,6 +435,7 @@ const App = () => {
   };
 
   const permanentlyDeleteFromTrash = (id: string) => {
+    lastUserActionRef.current = Date.now();
     const target = findTask(trash, id);
     if (!target) return;
     const r2Keys = getR2KeysForTask(trash, id);
@@ -437,6 +445,7 @@ const App = () => {
   };
 
   const handleUpdateTask = (id: string, updates: Partial<TaskNode>) => {
+    lastUserActionRef.current = Date.now();
     setTasks((prev) =>
       updateTask(prev, id, (t) => ({
         ...t,
