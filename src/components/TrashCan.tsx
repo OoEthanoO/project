@@ -14,7 +14,7 @@ const TrashCan = ({ items, onRestore, onDeleteForever, onNavigateToPlan }: Props
       <div className="empty-state">
         <div className="empty-icon" aria-hidden>🗑️</div>
         <p className="title" style={{ fontSize: 22, margin: '8px 0 6px' }}>Trash is empty</p>
-        <p className="muted" style={{ maxWidth: 520, margin: '0 auto 12px' }}>
+        <p className="muted" style={{ maxWidth: 520 }}>
           When you delete tasks, they’ll show up here. You can restore tasks to their original place or permanently remove them (including attachments).
         </p>
         <div className="empty-actions">

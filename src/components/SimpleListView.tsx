@@ -6,7 +6,6 @@ import { extractAttachment } from '../lib/file-extract';
 type Props = {
   tasks: TaskNode[];
   onSplit: (id: string) => void;
-  onSelect: (id: string) => void;
   onDelete: (id: string) => void;
   onUpdate: (id: string, updates: Partial<TaskNode>) => void;
   planningIds?: Set<string>;
@@ -39,7 +38,7 @@ const compareTasks = (a: FlatTask, b: FlatTask) => {
   return a.order - b.order;
 };
 
-const SimpleListView = ({ tasks, onSplit, onSelect, onDelete, onUpdate, planningIds = new Set(), onEditModeChange }: Props) => {
+const SimpleListView = ({ tasks, onSplit, onDelete, onUpdate, planningIds = new Set(), onEditModeChange }: Props) => {
   const flat = flattenTasks(tasks || []);
   const openAndProgress = flat.filter((t) => t.status !== 'done').sort(compareTasks);
   const completed = flat.filter((t) => t.status === 'done').sort((a, b) => -compareTasks(a, b));
@@ -48,7 +47,7 @@ const SimpleListView = ({ tasks, onSplit, onSelect, onDelete, onUpdate, planning
   return (
     <div className="task-list">
       {sorted.map((task) => (
-        <ListItem key={task.id} task={task} onSplit={onSplit} onSelect={onSelect} onDelete={onDelete} onUpdate={onUpdate} onEditModeChange={onEditModeChange} />
+        <ListItem key={task.id} task={task} onSplit={onSplit} onDelete={onDelete} onUpdate={onUpdate} onEditModeChange={onEditModeChange} />
       ))}
     </div>
   );
@@ -57,7 +56,6 @@ const SimpleListView = ({ tasks, onSplit, onSelect, onDelete, onUpdate, planning
 const ListItem = ({
   task,
   onSplit,
-  onSelect,
   onDelete,
   onUpdate,
   planningIds,
@@ -65,7 +63,6 @@ const ListItem = ({
 }: {
   task: FlatTask;
   onSplit: (id: string) => void;
-  onSelect: (id: string) => void;
   onDelete: (id: string) => void;
   onUpdate: (id: string, updates: Partial<TaskNode>) => void;
   planningIds?: Set<string>;
@@ -92,8 +89,8 @@ const ListItem = ({
   }, [editing, task.title, task.dueDate, task.startDate, task.description, task.attachments]);
 
   return (
-    <div className="task-card" onClick={() => onSelect(task.id)}>
-      <div className="task-header" style={{ cursor: 'pointer' }}>
+    <div className="task-card">
+      <div className="task-header">
         <div>
           {editing ? (
             <div className="form-row">

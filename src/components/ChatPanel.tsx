@@ -28,7 +28,7 @@ const ChatPanel = ({ messages, onSend, busy, onClear }: Props) => {
   }, [messages, busy]);
 
   return (
-    <div className="panel chat">
+    <>
       <div className="header">
         <div>
           <p className="title">AI Coach</p>
@@ -40,7 +40,16 @@ const ChatPanel = ({ messages, onSend, busy, onClear }: Props) => {
               Clear chat
             </button>
           )}
-          <span className="pill">Context-aware</span>
+          <button 
+            className="chat-close-button" 
+            onClick={() => {
+              const event = new CustomEvent('closeChatMobile');
+              window.dispatchEvent(event);
+            }}
+            aria-label="Close chat"
+          >
+            ✕
+          </button>
         </div>
       </div>
       <div className="chat-feed" ref={feedRef}>
@@ -80,7 +89,7 @@ const ChatPanel = ({ messages, onSend, busy, onClear }: Props) => {
       <div className="chat-input">
         <form className="chat-form" onSubmit={submit}>
           <textarea
-            placeholder="Ask the planner to adjust scope, prioritize, or rethink a task…"
+            placeholder="Ask to adjust, prioritize, or rethink tasks…"
             value={text}
             onChange={(e) => setText(e.target.value)}
             disabled={busy}
@@ -96,7 +105,7 @@ const ChatPanel = ({ messages, onSend, busy, onClear }: Props) => {
           </button>
         </form>
       </div>
-    </div>
+    </>
   );
 };
 
