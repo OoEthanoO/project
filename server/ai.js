@@ -176,10 +176,10 @@ export const generateSubtasks = async ({ task, ancestors = [], conversation = []
 
   const promptText = [
     'Split the given task into concrete, daily-size subtasks.',
-    'Only schedule subtasks between the start date and the parent due date; no dates before the start date or after the parent due date.',
-    'Be concise and actionable. Include optional dueDate per subtask if the parent dueDate exists; keep ISO-8601 (YYYY-MM-DD).',
+    `Today: ${startDateText}. Treat this as the earliest work date (the later of now or any task start).`,
+    'If the parent has a due date, keep every subtask on or before it. Still assign a concrete dueDate after today for every subtask.',
+    'Be concise and actionable. Every subtask MUST include a dueDate (YYYY-MM-DD). Never return null for dueDate. Due dates must be AFTER today.',
     'Interpret all due dates as deadlines at the START of that day (00:00), so finish work by the prior day if needed.',
-    'Do NOT set a subtask dueDate on the planning start date. The earliest allowed subtask dueDate is the NEXT calendar day after the start date (unless the parent due date is earlier than that).',
     'Balance the workload across the available days; do not frontload or backload. If work is in units (pages/chapters/problems), distribute units evenly so daily effort is consistent.',
     'IMPORTANT: Ensure completeness and symmetry. If you create a subtask for "first half" or "part 1" of something, you MUST also create corresponding subtasks for "second half" or remaining parts. Never leave partial work incomplete.',
     'Do NOT emit or invent a startDate for subtasks; only use dueDate when needed.',
@@ -194,10 +194,9 @@ export const generateSubtasks = async ({ task, ancestors = [], conversation = []
     globalInstruction ? `Global instruction: ${globalInstruction}` : '',
     '',
     ancestors.length > 0 ? `Task hierarchy (root → parent → current): ${hierarchyString}` : '',
-    `Planning start date: ${startDateText}.`,
+    `Today: ${startDateText}`,
     `Task title: ${task.title}`,
     `Task due: ${task.dueDate ?? 'not provided'}`,
-    `Task earliest start: ${startDateText}`,
     `Task description: ${task.description || 'none'}`,
     `Attachments: ${task.attachments.map((a) => a.name || a.type || 'file').join(', ') || 'none'}`,
     attachmentContext ? `Attachment excerpts:\n${attachmentContext}` : '',
@@ -215,7 +214,7 @@ export const generateSubtasks = async ({ task, ancestors = [], conversation = []
 
   const { content, usage, modelUsed, totalCostUsd } = await callOpenRouter({
     messages: [
-      { role: 'system', content: `You are a planning assistant that outputs strict JSON. No prose. ${clientTimeZone ? `Assume user's timezone: ${clientTimeZone}.` : ''}` },
+      { role: 'system', content: 'You are a planning assistant that outputs strict JSON. No prose.' },
       { role: 'user', content: userContent }
     ],
     modelId,
@@ -231,10 +230,10 @@ export const generateSubtasks = async ({ task, ancestors = [], conversation = []
 
   const parsed = parseJsonContent(content);
   const items = parsed.items ?? [];
+
   const mapped = items.map((item) => ({
     title: item.title,
     description: item.description || `Auto-planned from "${task.title}".`,
-    // Preserve model-provided dueDate; do not fallback to parent due to avoid collapsing schedule
     dueDate: item.dueDate ?? null
   }));
   return { items: mapped, usage, modelUsed, totalCostUsd };
