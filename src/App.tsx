@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Routes, Route, useNavigate } from 'react-router-dom';
 import TaskForm from './components/TaskForm';
 import TaskTree from './components/TaskTree';
@@ -58,6 +58,8 @@ const App = () => {
   const [serverVersion, setServerVersion] = useState<string | null>(null);
   const [authNotice, setAuthNotice] = useState('');
   const [isEditingTask, setIsEditingTask] = useState(false); // Track if any task is in edit mode
+  // Track recent user-initiated mutations (e.g., rapid keyboard reorders) to avoid poll overwrites
+  const lastUserActionRef = useRef(0);
   const navigate = useNavigate();
 
   const modelTiers = MODEL_TIERS;
@@ -202,6 +204,10 @@ const App = () => {
       if (showTaskModal || showInstructionModal || showTopUpModal || chatting || isEditingTask) {
         return;
       }
+      // If the user just modified tasks (e.g., rapid keyboard reorders), pause polling to avoid overwriting
+      if (Date.now() - lastUserActionRef.current < 2000) {
+        return;
+      }
       // Skip polling when offline or during network transitions
       if (typeof navigator !== 'undefined' && navigator && navigator.onLine === false) {
         return;
@@ -331,8 +337,10 @@ const App = () => {
           if (activeTab === 'tree' && selectedTaskId) {
             e.preventDefault();
             if (e.shiftKey) {
+              lastUserActionRef.current = Date.now();
               setTasks((prev) => moveTaskToTop(prev, selectedTaskId));
             } else {
+              lastUserActionRef.current = Date.now();
               setTasks((prev) => reorderWithinParent(prev, selectedTaskId, 'up'));
             }
           }
@@ -341,8 +349,10 @@ const App = () => {
           if (activeTab === 'tree' && selectedTaskId) {
             e.preventDefault();
             if (e.shiftKey) {
+              lastUserActionRef.current = Date.now();
               setTasks((prev) => moveTaskToBottom(prev, selectedTaskId));
             } else {
+              lastUserActionRef.current = Date.now();
               setTasks((prev) => reorderWithinParent(prev, selectedTaskId, 'down'));
             }
           }
