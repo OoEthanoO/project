@@ -1,6 +1,6 @@
 import { TaskNode, Attachment } from '../types';
 import AttachmentList from './AttachmentList';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { extractAttachment } from '../lib/file-extract';
 
 type Props = {
@@ -75,9 +75,20 @@ const ListItem = ({
   const [title, setTitle] = useState(task.title);
   const [dueDate, setDueDate] = useState(task.dueDate || '');
   const [startDate, setStartDate] = useState(task.startDate || '');
+  const [description, setDescription] = useState(task.description || '');
   const [attachments, setAttachments] = useState<Attachment[]>(task.attachments || []);
   const canSplit = task.dueDate ? task.dueDate > new Date().toISOString().slice(0, 10) && task.status !== 'done' : false;
   const isDone = task.status === 'done';
+
+  // Keep local edit buffers in sync when props change and we're not editing
+  useEffect(() => {
+    if (editing) return;
+    setTitle(task.title);
+    setDueDate(task.dueDate || '');
+    setStartDate(task.startDate || '');
+    setDescription(task.description || '');
+    setAttachments(task.attachments || []);
+  }, [editing, task.title, task.dueDate, task.startDate, task.description, task.attachments]);
 
   return (
     <div className="task-card" onClick={() => onSelect(task.id)}>
@@ -167,8 +178,8 @@ const ListItem = ({
           <label className="muted">Description</label>
           <textarea
             placeholder="Description"
-            value={task.description || ''}
-            onChange={(e) => onUpdate(task.id, { description: e.target.value })}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
           />
         </div>
       ) : null}
@@ -227,6 +238,7 @@ const ListItem = ({
                 title: title.trim() || '(untitled)',
                 dueDate: dueDate || undefined,
                 startDate: startDate || undefined,
+                description: description.trim(),
                 attachments
               });
             }
