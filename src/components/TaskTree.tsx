@@ -107,7 +107,8 @@ const TaskNodeView = ({
 }) => {
   const [showSubForm, setShowSubForm] = useState(false);
   const selected = selectedId === task.id;
-  const canSplit = !isDueTodayOrPast(task.dueDate);
+  const isStartAfterDue = task.startDate && task.dueDate && task.startDate >= task.dueDate;
+  const canSplit = !isDueTodayOrPast(task.dueDate) && !isStartAfterDue;
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(task.title);
   const [dueDate, setDueDate] = useState(task.dueDate || '');

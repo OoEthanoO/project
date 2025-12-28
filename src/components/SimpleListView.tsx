@@ -77,7 +77,8 @@ const ListItem = ({
   const [startDate, setStartDate] = useState(task.startDate || '');
   const [description, setDescription] = useState(task.description || '');
   const [attachments, setAttachments] = useState<Attachment[]>(task.attachments || []);
-  const canSplit = task.dueDate ? task.dueDate > new Date().toISOString().slice(0, 10) && task.status !== 'done' : false;
+  const isStartAfterDue = task.startDate && task.dueDate && task.startDate >= task.dueDate;
+  const canSplit = task.dueDate ? task.dueDate > new Date().toISOString().slice(0, 10) && task.status !== 'done' && !isStartAfterDue : false;
   const isDone = task.status === 'done';
 
   // Keep local edit buffers in sync when props change and we're not editing
