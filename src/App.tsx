@@ -60,6 +60,8 @@ const App = () => {
   const [isEditingTask, setIsEditingTask] = useState(false); // Track if any task is in edit mode
   // Track recent user-initiated mutations (e.g., rapid keyboard reorders) to avoid poll overwrites
   const lastUserActionRef = useRef(0);
+  // Prevent spamming version-update logs and duplicate reload timers
+  const pendingReloadRef = useRef(false);
   const navigate = useNavigate();
 
   const modelTiers = MODEL_TIERS;
@@ -166,19 +168,10 @@ const App = () => {
         
         console.log('[version] Current:', serverVersion, 'Server:', newVersion);
         
-        // Subsequent checks: compare and reload if changed
+        // Subsequent checks: compare and reload if changed (reload immediately)
         if (newVersion !== serverVersion) {
-          if (showTaskModal || showInstructionModal || showTopUpModal || chatting || isEditingTask) {
-            console.log('[version] Server updated but postponing reload (user is active)');
-            // Set a flag to reload when user becomes idle
-            setTimeout(() => {
-              if (!showTaskModal && !showInstructionModal && !showTopUpModal && !chatting && !isEditingTask) {
-                console.log('[version] User now idle, reloading...');
-                window.location.reload();
-              }
-            }, 5000);
-            return;
-          }
+          if (pendingReloadRef.current) return; // already reloading
+          pendingReloadRef.current = true;
           console.log(`[version] Server updated from ${serverVersion} to ${newVersion}, reloading...`);
           window.location.reload();
           return;
