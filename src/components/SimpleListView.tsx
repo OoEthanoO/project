@@ -13,13 +13,13 @@ type Props = {
   onEditModeChange?: (isEditing: boolean) => void;
 };
 
-type FlatTask = TaskNode & { depth: number; order: number };
+type FlatTask = TaskNode & { depth: number; order: number; parentTitle?: string };
 
-const flattenTasks = (tasks: TaskNode[], depth = 0, orderRef = { value: 0 }): FlatTask[] => {
+const flattenTasks = (tasks: TaskNode[], depth = 0, orderRef = { value: 0 }, parentTitle?: string): FlatTask[] => {
   return tasks.flatMap((t) => {
     const currentOrder = orderRef.value++;
-    const self: FlatTask = { ...t, parentId: t.parentId, title: t.title || '(untitled task)', depth, order: currentOrder };
-    const children = flattenTasks(t.children || [], depth + 1, orderRef);
+    const self: FlatTask = { ...t, parentId: t.parentId, title: t.title || '(untitled task)', depth, order: currentOrder, parentTitle };
+    const children = flattenTasks(t.children || [], depth + 1, orderRef, t.title || '(untitled task)');
     return [self, ...children];
   });
 };
@@ -153,7 +153,7 @@ const ListItem = ({
           <div className="task-meta" style={{ marginTop: 8 }}>
             {task.dueDate && <span className="badge">Due {task.dueDate}</span>}
             {task.startDate && <span className="badge">Start {task.startDate}</span>}
-            {task.parentId && <span className="badge">From parent</span>}
+            {task.parentId && <span className="badge">From {task.parentTitle || 'parent'}</span>}
             <button
               className={`badge badge-status status-${task.status || 'open'}`}
               onClick={(e) => {
