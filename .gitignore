@@ -8,3 +8,8 @@ dist
 .env*.local
 # Ensure production env files stay out of commits
 .env.production
+
+# Database backups (contain sensitive user data)
+backups/
+*.sql
+*.backup

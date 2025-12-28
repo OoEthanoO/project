@@ -105,36 +105,58 @@ const App = () => {
         return;
       }
       try {
+        // CRITICAL: Check localStorage backup FIRST before fetching from server
+        let localBackup = null;
+        try {
+          const backupStr = localStorage.getItem('yanplanner_backup_' + user.id);
+          if (backupStr) {
+            localBackup = JSON.parse(backupStr);
+          }
+        } catch (e) {
+          console.error('Failed to read local backup', e);
+        }
+        
         const state = await fetchState(user.id);
         if (cancelled) return;
-        
-        // CRITICAL: Backup current state before overwriting
-        const currentTasks = tasks;
-        const currentTrash = trash;
-        if (currentTasks.length > 0 || currentTrash.length > 0) {
-          try {
-            localStorage.setItem('yanplanner_backup_' + user.id, JSON.stringify({
-              tasks: currentTasks,
-              trash: currentTrash,
-              timestamp: new Date().toISOString()
-            }));
-          } catch (e) {
-            console.error('Failed to create backup', e);
-          }
-        }
         
         // CRITICAL: Never replace existing data with empty data from server
         // This prevents data loss from race conditions or server errors
         const newTasks = state.tasks || [];
         const newTrash = state.trash || [];
         
-        if (currentTasks.length > 0 && newTasks.length === 0 && !state._explicitlyEmpty) {
-          console.warn('[SAFEGUARD] Refusing to replace', currentTasks.length, 'tasks with empty array from server');
-          // Keep existing tasks, but still load other state
-          setTrash(newTrash.length > 0 ? newTrash : currentTrash);
+        // If server returns empty but we have a local backup, prefer the backup
+        if (newTasks.length === 0 && localBackup && localBackup.tasks?.length > 0) {
+          console.warn('[RECOVERY] Server returned empty data but local backup exists. Using backup.');
+          console.warn(`[RECOVERY] Backup from ${localBackup.timestamp} with ${localBackup.tasks.length} tasks`);
+          setTasks(localBackup.tasks);
+          setTrash(localBackup.trash || []);
+          // Save backup to server immediately
+          setTimeout(() => {
+            saveState(user.id, {
+              tasks: localBackup.tasks,
+              trash: localBackup.trash || [],
+              chat: messages,
+              config: { globalInstruction, modelId },
+              selectedTaskId
+            }).catch((err) => console.error('Failed to restore backup to server', err));
+          }, 1000);
         } else {
+          // Normal case: use server data
           setTasks(newTasks);
           setTrash(newTrash);
+          
+          // Create/update backup in localStorage (but only if we have data)
+          if (newTasks.length > 0 || newTrash.length > 0) {
+            try {
+              localStorage.setItem('yanplanner_backup_' + user.id, JSON.stringify({
+                tasks: newTasks,
+                trash: newTrash,
+                timestamp: new Date().toISOString()
+              }));
+            } catch (e) {
+              console.error('Failed to create backup', e);
+            }
+          }
         }
         const chat = state.chat || [];
         setMessages((prev) => {
