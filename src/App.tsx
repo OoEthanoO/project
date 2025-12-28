@@ -16,6 +16,7 @@ import { fetchState, saveState } from './lib/state';
 import { fetchBalance, topUp } from './lib/billing';
 import { createCheckoutSession } from './lib/payments';
 import { MODEL_TIERS, getDefaultModel, getValidModelOrDefault } from '../shared/model-config.js';
+import { getAvailableBackups, restoreFromBackup, clearBackup } from './lib/backup-recovery.js';
 
 const initialCoachMessage = () => ({
   id: randomId(),
@@ -58,6 +59,7 @@ const App = () => {
   const [serverVersion, setServerVersion] = useState<string | null>(null);
   const [authNotice, setAuthNotice] = useState('');
   const [isEditingTask, setIsEditingTask] = useState(false); // Track if any task is in edit mode
+  const [backupAvailable, setBackupAvailable] = useState<any>(null); // Track if backup exists
   // Track recent user-initiated mutations (e.g., rapid keyboard reorders) to avoid poll overwrites
   const lastUserActionRef = useRef(0);
   // Prevent spamming version-update logs and duplicate reload timers
@@ -77,6 +79,18 @@ const App = () => {
     modelTiers.find((t) => t.id === modelId)?.note ||
     'Pick a model tier. Paid tiers handle attachments; Tier 0 is text-only.';
 
+  // Check for available backup when user logs in or tasks change
+  useEffect(() => {
+    if (user) {
+      const backup = getAvailableBackups(user.id);
+      if (backup && backup.taskCount > 0) {
+        setBackupAvailable(backup);
+      } else {
+        setBackupAvailable(null);
+      }
+    }
+  }, [user, tasks]);
+
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
@@ -93,8 +107,35 @@ const App = () => {
       try {
         const state = await fetchState(user.id);
         if (cancelled) return;
-        setTasks(state.tasks || []);
-        setTrash(state.trash || []);
+        
+        // CRITICAL: Backup current state before overwriting
+        const currentTasks = tasks;
+        const currentTrash = trash;
+        if (currentTasks.length > 0 || currentTrash.length > 0) {
+          try {
+            localStorage.setItem('yanplanner_backup_' + user.id, JSON.stringify({
+              tasks: currentTasks,
+              trash: currentTrash,
+              timestamp: new Date().toISOString()
+            }));
+          } catch (e) {
+            console.error('Failed to create backup', e);
+          }
+        }
+        
+        // CRITICAL: Never replace existing data with empty data from server
+        // This prevents data loss from race conditions or server errors
+        const newTasks = state.tasks || [];
+        const newTrash = state.trash || [];
+        
+        if (currentTasks.length > 0 && newTasks.length === 0 && !state._explicitlyEmpty) {
+          console.warn('[SAFEGUARD] Refusing to replace', currentTasks.length, 'tasks with empty array from server');
+          // Keep existing tasks, but still load other state
+          setTrash(newTrash.length > 0 ? newTrash : currentTrash);
+        } else {
+          setTasks(newTasks);
+          setTrash(newTrash);
+        }
         const chat = state.chat || [];
         setMessages((prev) => {
           if (chat.length >= prev.length) return chat.length ? chat : [initialCoachMessage()];
@@ -215,11 +256,21 @@ const App = () => {
         setTasks((prev) => {
           const newTasks = state.tasks || [];
           if (JSON.stringify(prev) === JSON.stringify(newTasks)) return prev;
+          // CRITICAL SAFEGUARD: Never replace existing data with empty data
+          if (prev.length > 0 && newTasks.length === 0 && !state._explicitlyEmpty) {
+            console.warn('[POLLING SAFEGUARD] Refusing to replace', prev.length, 'tasks with empty array');
+            return prev;
+          }
           return newTasks;
         });
         setTrash((prev) => {
           const newTrash = state.trash || [];
           if (JSON.stringify(prev) === JSON.stringify(newTrash)) return prev;
+          // CRITICAL SAFEGUARD: Never replace trash with empty data unless intentional
+          if (prev.length > 0 && newTrash.length === 0 && !state._explicitlyEmpty) {
+            console.warn('[POLLING SAFEGUARD] Refusing to replace', prev.length, 'trash items with empty array');
+            return prev;
+          }
           return newTrash;
         });
         const chat = state.chat || [];
@@ -635,6 +686,40 @@ const App = () => {
           <button className="secondary" onClick={() => setShowChat((v) => !v)}>
             {showChat ? 'Hide coach' : 'Show coach'}
           </button>
+          {backupAvailable && backupAvailable.taskCount > 0 && (
+            <button
+              className="secondary"
+              style={{ backgroundColor: '#ff9800', color: 'white', fontWeight: 'bold' }}
+              onClick={async () => {
+                if (!user) return;
+                const confirmed = window.confirm(
+                  `A backup from ${new Date(backupAvailable.timestamp).toLocaleString()} was found with ${backupAvailable.taskCount} tasks. Restore it? This will replace your current tasks.`
+                );
+                if (!confirmed) return;
+                try {
+                  const restored = restoreFromBackup(user.id);
+                  lastUserActionRef.current = Date.now();
+                  setTasks(restored.tasks);
+                  setTrash(restored.trash);
+                  // Save to server immediately
+                  await saveState(user.id, {
+                    tasks: restored.tasks,
+                    trash: restored.trash,
+                    chat: messages,
+                    config: { globalInstruction, modelId },
+                    selectedTaskId
+                  });
+                  clearBackup(user.id);
+                  setBackupAvailable(null);
+                  alert('Backup restored successfully!');
+                } catch (e) {
+                  alert('Failed to restore backup: ' + (e instanceof Error ? e.message : 'Unknown error'));
+                }
+              }}
+            >
+              🔄 Restore backup ({backupAvailable.taskCount} tasks)
+            </button>
+          )}
         </div>
         <div className="tabs">
           <button className={`tab ${activeTab === 'tree' ? 'active' : ''}`} onClick={() => setActiveTab('tree')}>

@@ -11,7 +11,17 @@ const defaults = () => ({
 export const getUserState = async (userId) => {
   if (!userId) throw new Error('Missing userId');
   const state = await prisma.userState.findUnique({ where: { userId } });
-  if (!state) return defaults();
+  if (!state) {
+    const defaults = {
+      tasks: [],
+      chat: [],
+      trash: [],
+      config: { globalInstruction: '', modelId: null, collapsedTaskIds: [] },
+      selectedTaskId: null,
+      _explicitlyEmpty: true // Marker that this is intentionally empty (new user)
+    };
+    return defaults;
+  }
   return {
     tasks: (state.tasks ?? []) ?? [],
     chat: (state.chat ?? []) ?? [],
@@ -21,7 +31,8 @@ export const getUserState = async (userId) => {
       modelId: state.config?.modelId,
       collapsedTaskIds: state.config?.collapsedTaskIds || []
     },
-    selectedTaskId: state.selectedTaskId ?? null
+    selectedTaskId: state.selectedTaskId ?? null,
+    _existingUser: true // Marker that this user has a state record
   };
 };
 
