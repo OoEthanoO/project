@@ -60,6 +60,7 @@ const App = () => {
   const [authNotice, setAuthNotice] = useState('');
   const [isEditingTask, setIsEditingTask] = useState(false); // Track if any task is in edit mode
   const [backupAvailable, setBackupAvailable] = useState<any>(null); // Track if backup exists
+  const [showBackupModal, setShowBackupModal] = useState(false);
   // Track recent user-initiated mutations (e.g., rapid keyboard reorders) to avoid poll overwrites
   const lastUserActionRef = useRef(0);
   // Prevent spamming version-update logs and duplicate reload timers
@@ -708,7 +709,7 @@ const App = () => {
           <button className="secondary" onClick={() => setShowChat((v) => !v)}>
             {showChat ? 'Hide coach' : 'Show coach'}
           </button>
-          {backupAvailable && backupAvailable.taskCount > 0 && (
+          {backupAvailable && backupAvailable.taskCount > 0 && tasks.length === 0 && (
             <button
               className="secondary"
               style={{ backgroundColor: '#ff9800', color: 'white', fontWeight: 'bold' }}
@@ -819,6 +820,14 @@ const App = () => {
             onNavigateToPlan={() => setActiveTab('tree')}
           />
         )}
+        {/* Backup menu button shown when user has tasks and a backup exists */}
+        {backupAvailable && backupAvailable.taskCount > 0 && tasks.length > 0 && (
+          <div style={{ position: 'fixed', top: 16, right: 16, zIndex: 20 }}>
+            <button className="secondary" onClick={() => setShowBackupModal(true)} title="View backup details and compare">
+              📦 Backup
+            </button>
+          </div>
+        )}
         <footer style={{ marginTop: '40px', paddingTop: '20px', borderTop: '1px solid #e0e0e0', textAlign: 'center' }}>
           <p className="muted" style={{ fontSize: 12, margin: '4px 0' }}>
             © {new Date().getFullYear()} YanPlanner. All rights reserved. {serverVersion && `v${serverVersion}`}
@@ -911,6 +920,71 @@ const App = () => {
             <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>
               No refunds. For production, connect a PCI-compliant payment provider.
             </p>
+          </div>
+        </div>
+      )}
+      {showBackupModal && backupAvailable && (
+        <div className="modal-backdrop" onClick={() => setShowBackupModal(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <p className="task-title">Backup details</p>
+            <p className="muted">Review the backup contents and compare with your current plan.</p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div>
+                <p className="task-title" style={{ fontSize: 14, marginBottom: 6 }}>Current plan</p>
+                <p className="muted" style={{ marginTop: 0 }}>Tasks: {tasks.length}</p>
+                <ul style={{ maxHeight: 160, overflow: 'auto', paddingLeft: 18 }}>
+                  {(tasks || []).slice(0, 50).map((t) => (
+                    <li key={t.id}>{t.title}</li>
+                  ))}
+                </ul>
+              </div>
+              <div>
+                <p className="task-title" style={{ fontSize: 14, marginBottom: 6 }}>Backup from {new Date(backupAvailable.timestamp).toLocaleString()}</p>
+                <p className="muted" style={{ marginTop: 0 }}>Tasks: {backupAvailable.taskCount}</p>
+                <ul style={{ maxHeight: 160, overflow: 'auto', paddingLeft: 18 }}>
+                  {(backupAvailable.tasks || []).slice(0, 50).map((t: any, idx: number) => (
+                    <li key={t.id || idx}>{t.title}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+            <div style={{ marginTop: 12 }}>
+              <p className="muted" style={{ fontSize: 12 }}>
+                Differences: {Math.abs((backupAvailable.taskCount || 0) - (tasks.length || 0))} task(s) difference.
+              </p>
+            </div>
+            <div className="task-actions" style={{ marginTop: 12 }}>
+              <button
+                className="primary"
+                onClick={async () => {
+                  if (!user) return;
+                  const confirmed = window.confirm('Restore this backup and replace your current tasks?');
+                  if (!confirmed) return;
+                  try {
+                    const restored = restoreFromBackup(user.id);
+                    lastUserActionRef.current = Date.now();
+                    setTasks(restored.tasks);
+                    setTrash(restored.trash);
+                    await saveState(user.id, {
+                      tasks: restored.tasks,
+                      trash: restored.trash,
+                      chat: messages,
+                      config: { globalInstruction, modelId },
+                      selectedTaskId
+                    });
+                    clearBackup(user.id);
+                    setBackupAvailable(null);
+                    setShowBackupModal(false);
+                    alert('Backup restored successfully!');
+                  } catch (e) {
+                    alert('Failed to restore backup: ' + (e instanceof Error ? e.message : 'Unknown error'));
+                  }
+                }}
+              >
+                Restore backup
+              </button>
+              <button className="secondary" onClick={() => setShowBackupModal(false)}>Close</button>
+            </div>
           </div>
         </div>
       )}
