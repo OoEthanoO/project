@@ -193,10 +193,13 @@ const TaskNodeView = ({
               className={`badge badge-status status-${task.status || 'open'}`}
               onClick={(e) => {
                 e.stopPropagation();
-                const nextStatus = task.status === 'open' ? 'in-progress' : task.status === 'in-progress' ? 'done' : 'open';
+                const isReverse = e.shiftKey;
+                const nextStatus = isReverse
+                  ? task.status === 'open' ? 'done' : task.status === 'done' ? 'in-progress' : 'open'
+                  : task.status === 'open' ? 'in-progress' : task.status === 'in-progress' ? 'done' : 'open';
                 onUpdate(task.id, { status: nextStatus });
               }}
-              title="Click to cycle: open → in-progress → done → open"
+              title="Click to cycle: open → in-progress → done → open. Shift+click to reverse."
             >
               {task.status === 'done' ? '✓ ' : task.status === 'in-progress' ? '⟳ ' : '○ '}
               {task.status || 'open'}
