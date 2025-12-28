@@ -168,8 +168,11 @@ const App = () => {
         const loadedModelId = state.config?.modelId || import.meta.env.VITE_OPENAI_MODEL || defaultModel;
         setModelId(getValidModelOrDefault(loadedModelId));
         setSelectedTaskId(state.selectedTaskId || null);
-        // Ensure collapsed IDs are typed as Set<string>
-        setCollapsedTaskIds(new Set<string>((state.config?.collapsedTaskIds || []) as string[]));
+        // Ensure collapsed IDs are typed as Set<string>, but don't override recent user toggles
+        const incomingCollapsed = new Set<string>((state.config?.collapsedTaskIds || []) as string[]);
+        if (Date.now() - lastUserActionRef.current > 800) {
+          setCollapsedTaskIds(incomingCollapsed);
+        }
         try {
           const bal = await fetchBalance(user.id);
           if (!cancelled) setBalanceCents(bal);
@@ -317,11 +320,15 @@ const App = () => {
         setGlobalInstruction((prev) => prev === newInstruction ? prev : newInstruction);
         setModelId((prev) => prev === validatedModelId ? prev : validatedModelId);
         setSelectedTaskId((prev) => prev === newSelectedId ? prev : newSelectedId);
-        setCollapsedTaskIds((prev) => {
-          const prevArray = Array.from(prev).sort().join(',');
-          const newArray = Array.from(newCollapsedIds).sort().join(',');
-          return prevArray === newArray ? prev : newCollapsedIds;
-        });
+        if (startedAt < lastUserActionRef.current) {
+          // Skip collapsed-id update if user interacted after this poll started
+        } else {
+          setCollapsedTaskIds((prev) => {
+            const prevArray = Array.from(prev).sort().join(',');
+            const newArray = Array.from(newCollapsedIds).sort().join(',');
+            return prevArray === newArray ? prev : newCollapsedIds;
+          });
+        }
         try {
           const bal = await fetchBalance(user.id);
           setBalanceCents((prev) => prev === bal ? prev : bal);
@@ -743,6 +750,27 @@ const App = () => {
               🔄 Restore backup ({backupAvailable.taskCount} tasks)
             </button>
           )}
+          {backupAvailable && backupAvailable.taskCount > 0 && tasks.length === 0 && (
+            <button
+              className="secondary"
+              style={{ borderColor: '#d32f2f', color: '#d32f2f', fontWeight: 500 }}
+              onClick={() => {
+                if (!user) return;
+                const ok = window.confirm('Delete this backup from your device? This cannot be undone.');
+                if (!ok) return;
+                try {
+                  clearBackup(user.id);
+                  setBackupAvailable(null);
+                  alert('Backup deleted.');
+                } catch (e) {
+                  alert('Failed to delete backup: ' + (e instanceof Error ? e.message : 'Unknown error'));
+                }
+              }}
+              title="Delete backup"
+            >
+              🗑️ Delete backup
+            </button>
+          )}
         </div>
         <div className="tabs">
           <button className={`tab ${activeTab === 'tree' ? 'active' : ''}`} onClick={() => setActiveTab('tree')}>
@@ -781,6 +809,7 @@ const App = () => {
             onEditModeChange={setIsEditingTask}
             collapsedIds={collapsedTaskIds}
             onToggleCollapsed={(id) => {
+              lastUserActionRef.current = Date.now();
               setCollapsedTaskIds((prev) => {
                 const next = new Set(prev);
                 if (next.has(id)) {
@@ -982,6 +1011,25 @@ const App = () => {
                 }}
               >
                 Restore backup
+              </button>
+              <button
+                className="secondary"
+                onClick={() => {
+                  if (!user) return;
+                  const ok = window.confirm('Delete this backup from your device? This cannot be undone.');
+                  if (!ok) return;
+                  try {
+                    clearBackup(user.id);
+                    setBackupAvailable(null);
+                    setShowBackupModal(false);
+                    alert('Backup deleted.');
+                  } catch (e) {
+                    alert('Failed to delete backup: ' + (e instanceof Error ? e.message : 'Unknown error'));
+                  }
+                }}
+                title="Delete backup"
+              >
+                Delete backup
               </button>
               <button className="secondary" onClick={() => setShowBackupModal(false)}>Close</button>
             </div>

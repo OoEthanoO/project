@@ -326,17 +326,17 @@ app.get('/api/admin/summary', async (req, res) => {
       take: 10
     });
     
-    const topups = await prisma.topup.aggregate({
+    const topups = await prisma.topUpTransaction.aggregate({
       _count: true,
       _sum: { amountCents: true }
     });
     
-    const usages = await prisma.usageCharge.aggregate({
+    const usages = await prisma.usageTransaction.aggregate({
       _count: true,
       _sum: { amountCents: true }
     });
     
-    const recentTopups = await prisma.topup.findMany({
+    const recentTopups = await prisma.topUpTransaction.findMany({
       orderBy: { createdAt: 'desc' },
       take: 5
     });
