@@ -233,6 +233,11 @@ const TaskNodeView = ({
   const descriptionText = task.description?.trim() ?? '';
   const hasDescription = descriptionText.length > 0;
   const hasMinBalance = (balanceCents ?? 0) >= 50;
+  const splitDisabledReason = !hasMinBalance
+    ? 'Minimum $0.50 balance required to use AI features.'
+    : !canSplit
+      ? 'Due today or overdue; adjust due date before splitting.'
+      : undefined;
 
   console.log('TaskNodeView render - task:', task.id, 'editing:', editing);
 
@@ -715,8 +720,8 @@ const TaskNodeView = ({
             <button
               className="primary"
               onClick={() => onSplit(task.id)}
-              disabled={!canSplit || isDone || planningIds?.has(task.id)}
-              title={!canSplit ? 'Due today or overdue; adjust due date before splitting.' : undefined}
+              disabled={!hasMinBalance || !canSplit || isDone || planningIds?.has(task.id)}
+              title={splitDisabledReason}
             >
               {planningIds?.has(task.id) ? 'Planning…' : 'AI split'}
             </button>
@@ -833,8 +838,8 @@ const TaskNodeView = ({
                   setShowMobileModal(false);
                   onSplit(task.id);
                 }}
-                disabled={!canSplit || isDone || planningIds?.has(task.id)}
-                title={!canSplit ? 'Due today or overdue; adjust due date before splitting.' : undefined}
+                disabled={!hasMinBalance || !canSplit || isDone || planningIds?.has(task.id)}
+                title={splitDisabledReason}
                 data-onboarding={isOnboardingSplitTarget && onboardingShowSplit ? 'split-task' : undefined}
               >
                 {planningIds?.has(task.id) ? 'Planning…' : 'AI split'}
@@ -946,8 +951,8 @@ const TaskNodeView = ({
               setContextMenu(null);
               onSplit(task.id);
             }}
-            disabled={!canSplit || isDone || planningIds?.has(task.id)}
-            title={!canSplit ? 'Due today or overdue; adjust due date before splitting.' : undefined}
+            disabled={!hasMinBalance || !canSplit || isDone || planningIds?.has(task.id)}
+            title={splitDisabledReason}
             data-onboarding={isOnboardingSplitTarget && onboardingShowSplit ? 'split-task' : undefined}
           >
             {planningIds?.has(task.id) ? 'Planning…' : '🤖 AI split'}

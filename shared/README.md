@@ -1,44 +1,37 @@
 # Model Configuration
 
-This directory contains centralized configuration for AI model tiers.
+This directory contains centralized configuration for the single AI model used by the app.
 
 ## Usage
 
-To change a model tier, edit `/shared/model-config.js`. The changes will automatically be reflected everywhere in the app:
+To change the model, edit `/shared/model-config.js`. The change is reflected in:
 
-- Frontend UI (model dropdown in App.tsx)
 - Backend AI logic (pricing, file support checks)
-- API endpoints (billing, free tier detection)
+- API endpoints (billing and minimum balance checks)
+- Any UI that references the model ID
 
 ## Configuration Structure
 
-Each model tier has:
-- `id`: The OpenRouter model identifier
-- `label`: Display name for the UI dropdown
+The model config includes:
+- `id`: The provider model identifier (OpenRouter for now)
+- `label`: Display name
 - `note`: Description shown to users
 - `multimodal`: Whether the model supports file attachments
 - `pricing`: Input/output token costs per million tokens (used for billing)
-- `maxAttachments`: Maximum number of files this tier can process
-- `maxAttachmentTokens`: Token budget for file content
+- `pricingTiers` (optional): Tiered pricing based on prompt token count
 
 ## Example
 
-To change Tier 1 from Gemini to a different model:
-
 ```javascript
 {
-  id: 'anthropic/claude-3-haiku',  // Change this
-  label: 'Tier 1 — Budget multimodal',
-  note: 'Budget multimodal; good default for using attachments without heavy spend.',
+  id: 'google/gemini-3-pro-preview',
+  label: 'Gemini 3 Pro Preview',
+  note: 'Gemini 3 Pro Preview via OpenRouter; supports attachments.',
   multimodal: true,
-  pricing: { in: 0.25, out: 1.25 },  // Update pricing
-  maxAttachments: 5,
-  maxAttachmentTokens: 8000
+  pricing: { in: 2, out: 12 },
+  pricingTiers: [
+    { maxPromptTokens: 200000, maxCompletionTokens: 200000, in: 2, out: 12 },
+    { maxPromptTokens: Infinity, maxCompletionTokens: Infinity, in: 4, out: 18 }
+  ]
 }
 ```
-
-The change will automatically update:
-- UI dropdown and descriptions
-- Pricing calculations in the backend
-- File support detection
-- Token limits for file processing

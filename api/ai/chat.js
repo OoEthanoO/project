@@ -15,7 +15,7 @@ export default async function handler(req, res) {
     const isFree = isFreeModel(modelId);
     if (!isFree) {
       const bal = await getBalance(userId);
-      if (bal < 50) return sendJson(res, 402, { error: 'Minimum balance of $0.50 required for paid models' });
+      if (bal < 50) return sendJson(res, 402, { error: 'Minimum balance of $0.50 required to use AI features' });
     }
     const result = await chatWithPlanner({ prompt, tasks, globalInstruction, selectedTaskId, modelId });
     if (!isFree && result.totalCostUsd > 0) {

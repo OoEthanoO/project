@@ -1,36 +1,19 @@
 /**
- * Centralized model configuration for AI tiers.
- * Change models here and they'll be reflected everywhere in the app.
+ * Centralized AI model configuration.
+ * Change the model here and it will be reflected everywhere in the app.
  */
 
 export const MODEL_TIERS = [
   {
-    id: 'xiaomi/mimo-v2-flash:free',
-    label: 'Tier 0 — Free (text-only)',
-    note: 'Free text-only; no attachments. Paste important file content into descriptions.',
-    multimodal: false,
-    pricing: { in: 0, out: 0 }
-  },
-  {
-    id: 'google/gemini-2.5-flash-lite',
-    label: 'Tier 1 — Budget multimodal',
-    note: 'Budget multimodal; good default for using attachments without heavy spend.',
+    id: 'google/gemini-3-pro-preview',
+    label: 'Gemini 3 Pro Preview',
+    note: 'Gemini 3 Pro Preview via OpenRouter; supports attachments.',
     multimodal: true,
-    pricing: { in: 0.1, out: 0.4 }
-  },
-  {
-    id: 'openai/gpt-5-mini',
-    label: 'Tier 2 — Strong multimodal',
-    note: 'Stronger multimodal; better for complex tasks and mixed attachments.',
-    multimodal: true,
-    pricing: { in: 0.25, out: 2 }
-  },
-  {
-    id: 'google/gemini-2.5-pro',
-    label: 'Tier 3 — Premium multimodal',
-    note: 'Premium multimodal; best for big attachments and deep breakdowns.',
-    multimodal: true,
-    pricing: { in: 1.25, out: 10 }
+    pricing: { in: 2, out: 12 },
+    pricingTiers: [
+      { maxPromptTokens: 200000, maxCompletionTokens: 200000, in: 2, out: 12 },
+      { maxPromptTokens: Infinity, maxCompletionTokens: Infinity, in: 4, out: 18 }
+    ]
   }
 ];
 
@@ -40,11 +23,26 @@ export const getDefaultModel = () => MODEL_TIERS[0];
 export const isFreeModel = (modelId) => {
   const tier = getModelById(modelId);
   if (!tier) return false;
-  return !tier.multimodal || (tier.pricing.in === 0 && tier.pricing.out === 0);
+  return tier.pricing.in === 0 && tier.pricing.out === 0;
 };
 export const supportsFiles = (modelId) => getModelById(modelId)?.multimodal ?? false;
 export const getPricing = (modelId) => getModelById(modelId)?.pricing ?? { in: 0, out: 0 };
-export const getTierIndex = (modelId) => MODEL_TIERS.findIndex((t) => t.id === modelId);
+export const getPricingForUsage = (modelId, promptTokens = 0, completionTokens = 0) => {
+  const tier = getModelById(modelId);
+  if (!tier) return { in: 0, out: 0 };
+  const tiers = tier.pricingTiers || [];
+  if (Array.isArray(tiers) && tiers.length > 0) {
+    const inputTier = tiers.find((t) => promptTokens <= t.maxPromptTokens);
+    const outputTier = tiers.find((t) => completionTokens <= (t.maxCompletionTokens ?? t.maxPromptTokens));
+    if (inputTier || outputTier) {
+      return {
+        in: (inputTier || outputTier).in,
+        out: (outputTier || inputTier).out
+      };
+    }
+  }
+  return tier.pricing ?? { in: 0, out: 0 };
+};
 export const isValidModel = (modelId) => MODEL_TIERS.some((t) => t.id === modelId);
 export const getValidModelOrDefault = (modelId) => isValidModel(modelId) ? modelId : getDefaultModel().id;
 

@@ -84,7 +84,7 @@ app.post('/api/ai/split', async (req, res) => {
     const isFree = isFreeModel(modelId);
     if (!isFree) {
       const bal = await getBalance(userId);
-      if (bal < 50) return res.status(402).json({ error: 'Minimum balance of $0.50 required for paid models' });
+      if (bal < 50) return res.status(402).json({ error: 'Minimum balance of $0.50 required to use AI features' });
     }
     const result = await generateSubtasks({ task, ancestors, conversation, globalInstruction, modelId, clientLocalDate, clientTimeZone });
     if (result.totalCostUsd > 0) {
@@ -119,7 +119,7 @@ app.post('/api/ai/chat', async (req, res) => {
     const isFree = isFreeModel(modelId);
     if (!isFree) {
       const bal = await getBalance(userId);
-      if (bal < 50) return res.status(402).json({ error: 'Minimum balance of $0.50 required for paid models' });
+      if (bal < 50) return res.status(402).json({ error: 'Minimum balance of $0.50 required to use AI features' });
     }
     const result = await chatWithPlanner({ prompt, tasks, globalInstruction, selectedTaskId, modelId, clientLocalDate, clientTimeZone });
     if (result.totalCostUsd > 0) {

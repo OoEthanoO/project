@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type { SyntheticEvent } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import TaskForm from './components/TaskForm';
 import TaskTree from './components/TaskTree';
@@ -14,7 +15,7 @@ import { currentUser, login, logout, register } from './lib/auth';
 import { fetchState, saveState } from './lib/state';
 import { fetchBalance, topUp } from './lib/billing';
 import { createCheckoutSession } from './lib/payments';
-import { MODEL_TIERS, getDefaultModel, getValidModelOrDefault } from '../shared/model-config.js';
+import { getDefaultModel, getValidModelOrDefault, getModelById } from '../shared/model-config.js';
 import { getAvailableBackups, restoreFromBackup, clearBackup } from './lib/backup-recovery.js';
 
 const initialCoachMessage = () => ({
@@ -106,14 +107,11 @@ const App = () => {
   const settingsButtonRef = useRef<HTMLButtonElement | null>(null);
   const mobileSettingsTabRef = useRef<HTMLButtonElement | null>(null);
 
-  const modelTiers = MODEL_TIERS;
   const [globalInstruction, setGlobalInstruction] = useState('');
   const defaultModel = getDefaultModel().id;
   const [modelId, setModelId] = useState(defaultModel);
-  const currentTier = modelTiers.find((t) => t.id === modelId);
-  const isPaidModel = currentTier?.multimodal ?? false;
+  const currentModel = getModelById(modelId);
   const hasMinBalance = balanceCents >= 50;
-  const canUsePaidModel = !isPaidModel || hasMinBalance;
   const latestStateRef = useRef({
     tasks,
     trash,
@@ -123,9 +121,6 @@ const App = () => {
     collapsedTaskIds
   });
   
-  const modelDesc =
-    modelTiers.find((t) => t.id === modelId)?.note ||
-    'Pick a model tier. Paid tiers handle attachments; Tier 0 is text-only.';
   const resolveTarget = (el: HTMLElement | null) => {
     if (!el) return null;
     const rect = el.getBoundingClientRect();
@@ -137,7 +132,7 @@ const App = () => {
       id: 'add-task',
       title: 'Add your first task',
       description: 'Create tasks with due dates, notes, and uploads in seconds.',
-      action: 'Press Add task or Continue to open the task form.',
+      action: 'Press Continue to open the task form.',
       placement: isMobile ? 'top' : 'right',
       getTarget: () => resolveTarget(isMobile ? mobileFabRef.current : addTaskButtonRef.current),
       highlightPadding: 10
@@ -146,7 +141,7 @@ const App = () => {
       id: 'create-task',
       title: 'Create the task',
       description: 'Give it a title and due date so the planner can schedule it.',
-      action: 'Save it, or press Continue to add a sample task.',
+      action: 'Press Continue to add a sample task.',
       placement: isMobile ? 'top' : 'right',
       getTarget: () => {
         if (typeof document === 'undefined') return null;
@@ -157,8 +152,8 @@ const App = () => {
     {
       id: 'split-task',
       title: 'Split it into steps',
-      description: 'Break a big task into daily subtasks with one click.',
-      action: 'Click AI split to break your new task into steps.',
+      description: 'Use AI split to break a big task into actionable steps.',
+      action: 'Press Continue to move on.',
       placement: isMobile ? 'top' : 'left',
       getTarget: () => {
         if (typeof document === 'undefined') return null;
@@ -169,7 +164,7 @@ const App = () => {
     {
       id: 'settings',
       title: 'Settings & replay',
-      description: 'Adjust global instructions, model tier, and replay this walkthrough anytime.',
+      description: 'Adjust global instructions and replay this walkthrough anytime.',
       action: 'Open Settings anytime to replay this tour.',
       placement: isMobile ? 'top' : 'right',
       getTarget: () => resolveTarget(isMobile ? mobileSettingsTabRef.current : settingsButtonRef.current),
@@ -197,6 +192,10 @@ const App = () => {
     setShowOnboarding(false);
     setOnboardingTargetRect(null);
     setShowTaskModal(false);
+  };
+  const blockOnboardingInteraction = (e: SyntheticEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
   };
   const formatDateInput = (date: Date) => {
     const pad = (value: number) => String(value).padStart(2, '0');
@@ -789,12 +788,12 @@ const App = () => {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       const tag = (e.target as HTMLElement)?.tagName;
 
+      if (showOnboarding) {
+        e.preventDefault();
+        return;
+      }
+
       if (e.key === 'Escape' || e.key === 'Esc' || e.key === 'esc') {
-        if (showOnboarding) {
-          e.preventDefault();
-          completeOnboarding();
-          return;
-        }
         if (showTaskModal || showInstructionModal || showSettingsModal) {
           e.preventDefault();
           if (showTaskModal) {
@@ -821,10 +820,6 @@ const App = () => {
           e.preventDefault();
           setShowInstructionModal(true);
           break;
-        case 'c':
-          e.preventDefault();
-          setShowChat((v) => !v);
-          break;
         case 'l':
           e.preventDefault();
           setActiveTab((tab) => (tab === 'tree' ? 'list' : 'tree'));
@@ -844,6 +839,15 @@ const App = () => {
       window.removeEventListener('closeChatMobile', handleCloseChatMobile);
     };
   }, [showTaskModal, showInstructionModal, showSettingsModal, activeTab, showOnboarding, currentOnboarding, user]);
+
+  useEffect(() => {
+    if (!showOnboarding || typeof document === 'undefined') return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [showOnboarding]);
 
   const stats = useMemo(() => {
     const all: TaskNode[] = [];
@@ -975,8 +979,8 @@ const App = () => {
     const task = findTask(tasks, id);
     if (!task) return;
     if (!user) return;
-    if (isPaidModel && !hasMinBalance) {
-      alert('Minimum balance of $0.50 required to use paid models. Please add funds or switch to the free tier.');
+    if (!hasMinBalance) {
+      alert('Minimum balance of $0.50 required to use AI features. Please add funds to continue.');
       return;
     }
     if (isDueTodayOrPast(task.dueDate)) {
@@ -1028,11 +1032,11 @@ const App = () => {
 
   const handleChat = async (text: string) => {
     if (!user) return;
-    if (isPaidModel && !hasMinBalance) {
+    if (!hasMinBalance) {
       const errorMsg: ChatMessage = {
         id: randomId(),
         role: 'ai',
-        content: 'Minimum balance of $0.50 required to use paid models. Please add funds or switch to the free tier (Tier 0).',
+        content: 'Minimum balance of $0.50 required to use AI features. Please add funds to continue.',
         createdAt: new Date().toISOString()
       };
       setMessages((prev) => [...prev, errorMsg]);
@@ -1134,16 +1138,6 @@ const App = () => {
               Restore backup
             </button>
           </div>
-          {isMobile && (
-            <div className="settings-footer">
-              <p className="muted" style={{ fontSize: 12, margin: '4px 0' }}>
-                © {new Date().getFullYear()} YanPlanner. All rights reserved. {serverVersion && `v${serverVersion}`}
-              </p>
-              <p className="muted" style={{ fontSize: 12, margin: '4px 0' }}>
-                For bugs, feature requests, or support: <a href="mailto:ethanxucoder@gmail.com" style={{ color: '#1976d2' }}>ethanxucoder@gmail.com</a>
-              </p>
-            </div>
-          )}
         </>
       );
     }
@@ -1166,32 +1160,6 @@ const App = () => {
           </button>
         </div>
         
-        <div style={{ marginBottom: 'var(--space-xl)' }}>
-          <p style={{ fontWeight: 600, marginBottom: 'var(--space-sm)' }}>AI Model</p>
-          {isPaidModel && !hasMinBalance && (
-            <p style={{ margin: '0 0 var(--space-sm) 0', fontSize: 13, color: '#d32f2f', fontWeight: 500 }}>
-              ⚠️ Minimum $0.50 balance required. Add funds or switch to Tier 0 (free).
-            </p>
-          )}
-          <select
-            value={modelId}
-            onChange={(e) => setModelId(e.target.value)}
-            style={{ width: '100%', marginBottom: 'var(--space-sm)' }}
-          >
-            {modelTiers.map((tier) => {
-              const modelName = tier.id.split('/').pop();
-              return (
-                <option key={tier.id} value={tier.id}>
-                  {tier.label} — {modelName}
-                </option>
-              );
-            })}
-          </select>
-          <p className="muted" style={{ margin: 0, fontSize: 13 }}>
-            {modelTiers.find((t) => t.id === modelId)?.note}
-          </p>
-        </div>
-
         <div style={{ marginBottom: 'var(--space-xl)' }}>
           <p style={{ fontWeight: 600, marginBottom: 'var(--space-sm)' }}>Onboarding</p>
           <p className="muted" style={{ marginBottom: 'var(--space-sm)' }}>
@@ -1244,16 +1212,27 @@ const App = () => {
           </div>
         )}
 
-        {isMobile && (
-          <div className="settings-footer">
-            <p className="muted" style={{ fontSize: 12, margin: '4px 0' }}>
-              © {new Date().getFullYear()} YanPlanner. All rights reserved. {serverVersion && `v${serverVersion}`}
-            </p>
-            <p className="muted" style={{ fontSize: 12, margin: '4px 0' }}>
-              For bugs, feature requests, or support: <a href="mailto:ethanxucoder@gmail.com" style={{ color: '#1976d2' }}>ethanxucoder@gmail.com</a>
-            </p>
+        <div style={{ marginBottom: 'var(--space-xl)' }}>
+          <p style={{ fontWeight: 600, marginBottom: 'var(--space-sm)' }}>About</p>
+          <div className="settings-about">
+            <div className="settings-about-row">
+              <span className="muted">© {new Date().getFullYear()} YanPlanner</span>
+              <span className="muted">All rights reserved.</span>
+            </div>
+            <div className="settings-about-row">
+              <span className="muted">Version</span>
+              <span>{serverVersion ? `v${serverVersion}` : '—'}</span>
+            </div>
+            <div className="settings-about-row">
+              <span className="muted">Support</span>
+              <a href="mailto:ethanxucoder@gmail.com">ethanxucoder@gmail.com</a>
+            </div>
+            <div className="settings-about-row">
+              <span className="muted">AI model</span>
+              <span>{currentModel?.label || modelId}</span>
+            </div>
           </div>
-        )}
+        </div>
 
         {!isMobile && (
           <div className="task-actions">
@@ -1479,54 +1458,25 @@ const App = () => {
           
           {/* Action buttons */}
           <div className="sidebar-section">
-            <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
-              <button
-                className="primary sidebar-add-button"
-                ref={addTaskButtonRef}
-                onClick={() => {
-                  if (showOnboarding && currentOnboarding?.id === 'add-task') {
-                    advanceOnboarding();
-                    return;
-                  }
-                  setShowTaskModal(true);
-                }}
-                style={{ flex: 1 }}
-              >
-                <span style={{ fontSize: '16px', marginRight: '6px' }}>+</span>
-                Add task
-              </button>
-              <button 
-                className={`secondary sidebar-icon-button ${showChat ? 'active-chat' : ''}`}
-                onClick={() => {
-                  setShowChat((v) => !v);
-                }}
-                title={showChat ? 'Hide coach' : 'Show coach'}
-              >
-                💬
-              </button>
-            </div>
+            <button
+              className="primary sidebar-add-button"
+              ref={addTaskButtonRef}
+              onClick={() => {
+                if (showOnboarding && currentOnboarding?.id === 'add-task') {
+                  advanceOnboarding();
+                  return;
+                }
+                setShowTaskModal(true);
+              }}
+              style={{ width: '100%' }}
+            >
+              <span style={{ fontSize: '16px', marginRight: '6px' }}>+</span>
+              Add task
+            </button>
           </div>
           
-          {/* Model and Settings at bottom */}
+          {/* Settings at bottom */}
           <div className="sidebar-section" style={{ marginTop: 'auto' }}>
-            <p className="sidebar-title">Configuration</p>
-            <select
-              value={modelId}
-              onChange={(e) => setModelId(e.target.value)}
-              className="sidebar-select"
-              title={`Current model: ${modelId}`}
-              style={{ width: '100%', marginBottom: 'var(--space-sm)' }}
-            >
-              {modelTiers.map((tier) => {
-                const modelName = tier.id.split('/').pop();
-                const tierName = tier.label.split(' — ')[0];
-                return (
-                  <option key={tier.id} value={tier.id}>
-                    {tierName} — {modelName}
-                  </option>
-                );
-              })}
-            </select>
             <button 
               className="secondary" 
               ref={settingsButtonRef}
@@ -1697,16 +1647,6 @@ const App = () => {
         </button>
       )}
 
-      {/* Footer outside scrollable area */}
-      <footer>
-        <p className="muted" style={{ fontSize: 12, margin: '4px 0' }}>
-          © {new Date().getFullYear()} YanPlanner. All rights reserved. {serverVersion && `v${serverVersion}`}
-        </p>
-        <p className="muted" style={{ fontSize: 12, margin: '4px 0' }}>
-          For bugs, feature requests, or support: <a href="mailto:ethanxucoder@gmail.com" style={{ color: '#1976d2' }}>ethanxucoder@gmail.com</a>
-        </p>
-      </footer>
-
       {/* Mobile slideover chat (hidden on desktop via CSS) */}
       <div className={`slideover ${showChat ? 'open' : ''}`}>
         <div className="slideover-panel panel">
@@ -1803,7 +1743,15 @@ const App = () => {
       )}
       {showOnboarding && currentOnboarding && (
         <>
-          <div className="onboarding-overlay" aria-hidden="true">
+          <div
+            className="onboarding-overlay"
+            aria-hidden="true"
+            onClick={blockOnboardingInteraction}
+            onMouseDown={blockOnboardingInteraction}
+            onTouchStart={blockOnboardingInteraction}
+            onTouchMove={blockOnboardingInteraction}
+            onWheel={blockOnboardingInteraction}
+          >
             {spotlightStyle && (
               <div className="onboarding-spotlight" style={spotlightStyle} />
             )}

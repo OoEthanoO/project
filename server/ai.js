@@ -1,5 +1,5 @@
 import fetch from 'node-fetch';
-import { priceMap, isFreeModel, supportsFiles, getTierIndex } from '../shared/model-config.js';
+import { getPricingForUsage, supportsFiles } from '../shared/model-config.js';
 
 const formatDate = (date) => date.toISOString().split('T')[0];
 
@@ -10,11 +10,11 @@ const resolveAttachment = async (attachment) => {
   }
   if (attachment.r2Key) {
     try {
-      // Use presigned URL instead of downloading - OpenRouter can fetch directly
+      // Use presigned URL instead of downloading - the provider can fetch directly
       const { getSignedDownloadUrl } = await import('./r2.js');
       const signedUrl = await getSignedDownloadUrl(attachment.r2Key, 3600); // 1 hour expiry
       console.log('[ai] Generated presigned URL for:', attachment.r2Key);
-      return { ...attachment, dataUrl: signedUrl }; // OpenRouter accepts https:// URLs
+      return { ...attachment, dataUrl: signedUrl }; // Provider accepts https:// URLs
     } catch (err) {
       console.error('[ai] Failed to generate presigned URL:', err.message);
       return attachment; // Return original without dataUrl
@@ -26,10 +26,42 @@ const resolveAttachment = async (attachment) => {
 
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY;
 const OPENROUTER_BASE_URL = process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1/chat/completions';
+const AI_PROVIDER = process.env.AI_PROVIDER || 'openrouter';
+const AI_API_KEY = process.env.AI_API_KEY || OPENROUTER_API_KEY;
+const AI_BASE_URL = process.env.AI_BASE_URL || OPENROUTER_BASE_URL;
+const AI_REFERER = process.env.AI_REFERER || process.env.OR_REFERRER || 'http://localhost';
+const AI_AUTH_HEADER = process.env.AI_AUTH_HEADER || 'Authorization';
+const AI_AUTH_PREFIX = process.env.AI_AUTH_PREFIX;
+
+const providerAdapters = {
+  openrouter: {
+    label: 'OpenRouter',
+    buildHeaders: () => ({
+      'HTTP-Referer': AI_REFERER,
+      'X-Title': 'YanPlanner'
+    }),
+    buildPayload: ({ modelId, messages, temperature, plugins }) => {
+      const payload = { model: modelId, messages, temperature };
+      if (plugins?.length) payload.plugins = plugins;
+      return payload;
+    }
+  },
+  vertex: {
+    label: 'Vertex',
+    buildHeaders: () => ({}),
+    buildPayload: ({ modelId, messages, temperature }) => ({
+      model: modelId,
+      messages,
+      temperature
+    })
+  }
+};
+const activeProvider = providerAdapters[AI_PROVIDER] || providerAdapters.openrouter;
+const providerLabel = activeProvider.label || 'AI';
 
 const ensureKey = () => {
-  if (!OPENROUTER_API_KEY) {
-    throw new Error('Missing OPENROUTER_API_KEY. Add it to your server env.');
+  if (!AI_API_KEY) {
+    throw new Error('Missing AI_API_KEY (or OPENROUTER_API_KEY/OPENAI_API_KEY). Add it to your server env.');
   }
 };
 
@@ -75,28 +107,31 @@ const summarizeAttachments = (attachments = [], maxItems = 3, maxChars = 800) =>
     .join('\n---\n');
 };
 
-const callOpenRouter = async ({ messages, modelId, plugins }) => {
+const callAiProvider = async ({ messages, modelId, plugins }) => {
   ensureKey();
   
   console.log('\n=== AI REQUEST ===');
+  console.log('Provider:', AI_PROVIDER);
   console.log('Model:', modelId);
   console.log('Messages:', JSON.stringify(messages, null, 2));
   console.log('=================\n');
   
-  const res = await fetch(OPENROUTER_BASE_URL, {
+  const authPrefix = AI_AUTH_PREFIX === '' ? '' : (AI_AUTH_PREFIX || 'Bearer');
+  const authHeaderValue = authPrefix ? `${authPrefix} ${AI_API_KEY}` : AI_API_KEY;
+  const payload = activeProvider.buildPayload({
+    modelId,
+    messages,
+    temperature: 0.2,
+    plugins
+  });
+  const res = await fetch(AI_BASE_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${OPENROUTER_API_KEY}`,
-      'HTTP-Referer': process.env.OR_REFERRER || 'http://localhost',
-      'X-Title': 'YanPlanner'
+      [AI_AUTH_HEADER]: authHeaderValue,
+      ...activeProvider.buildHeaders()
     },
-    body: JSON.stringify({
-      model: modelId,
-      messages,
-      temperature: 0.2,
-      plugins
-    })
+    body: JSON.stringify(payload)
   });
   const responseHeaders = {};
   res.headers.forEach((value, key) => {
@@ -109,26 +144,26 @@ const callOpenRouter = async ({ messages, modelId, plugins }) => {
   };
   if (!res.ok) {
     const text = await res.text();
-    console.error('[OpenRouter] Non-OK response body:', text);
-    console.error('[OpenRouter] Response meta:', responseMeta);
-    throw new Error(`OpenRouter request failed: ${res.status} ${text}`);
+    console.error(`[${providerLabel}] Non-OK response body:`, text);
+    console.error(`[${providerLabel}] Response meta:`, responseMeta);
+    throw new Error(`${providerLabel} request failed: ${res.status} ${text}`);
   }
   const rawText = await res.text();
   let data;
   try {
     data = JSON.parse(rawText);
   } catch (err) {
-    console.error('[OpenRouter] Failed to parse JSON response:', {
+    console.error(`[${providerLabel}] Failed to parse JSON response:`, {
       error: err?.message || err,
       meta: responseMeta,
       trimmedLength: rawText.trim().length,
       full: rawText,
       length: rawText.length
     });
-    throw new Error(`OpenRouter response parse failed: ${err?.message || err}`);
+    throw new Error(`${providerLabel} response parse failed: ${err?.message || err}`);
   }
   const content = data?.choices?.[0]?.message?.content;
-  if (!content) throw new Error('OpenRouter returned empty content.');
+  if (!content) throw new Error(`${providerLabel} returned empty content.`);
   
   console.log('\n=== AI RESPONSE ===');
   console.log('Content:', content);
@@ -136,15 +171,15 @@ const callOpenRouter = async ({ messages, modelId, plugins }) => {
   const usage = data?.usage || {};
   const modelUsed = data?.model || modelId;
 
-  const pricing = priceMap[modelUsed] || { in: 0, out: 0 };
   const promptTokens = usage.prompt_tokens || 0;
   const completionTokens = usage.completion_tokens || 0;
+  const pricing = getPricingForUsage(modelUsed, promptTokens, completionTokens);
   const promptCost = (promptTokens / 1_000_000) * pricing.in;
   const completionCost = (completionTokens / 1_000_000) * pricing.out;
   const totalCost = promptCost + completionCost;
 
   console.log(
-    `[OpenRouter] model=${modelUsed} prompt_tokens=${promptTokens} completion_tokens=${completionTokens} cost=$${totalCost.toFixed(
+    `[${providerLabel}] model=${modelUsed} prompt_tokens=${promptTokens} completion_tokens=${completionTokens} cost=$${totalCost.toFixed(
       6
     )} (calc: ${promptTokens}/1e6 * $${pricing.in}/M + ${completionTokens}/1e6 * $${pricing.out}/M)`
   );
@@ -237,13 +272,9 @@ export const generateSubtasks = async ({ task, ancestors = [], conversation = []
     'Prefer fewer, higher-impact steps; the user can further split subtasks later if they want daily action items.',
     'IMPORTANT: Ensure completeness and symmetry. If you create a subtask for "first half" or "part 1" of something, you MUST also create corresponding subtasks for "second half" or remaining parts. Never leave partial work incomplete.',
     'Do NOT emit or invent a startDate for subtasks; only use dueDate when needed.',
-    getTierIndex(modelId) === 3
+    supportsFilesFlag
       ? 'Use deep reasoning: anticipate risks, add QA/validation steps, and suggest buffers.'
-      : getTierIndex(modelId) === 2
-        ? 'Aim for thorough but concise breakdowns that handle complex constraints.'
-        : getTierIndex(modelId) === 1
-          ? 'Balance cost and quality; keep steps focused and leverage attachments when useful.'
-          : 'Text-only mode: ignore attachments; rely on titles/descriptions.',
+      : 'Text-only mode: ignore attachments; rely on titles/descriptions.',
     'Respond ONLY as JSON with shape: {"items":[{"title":"...", "description":"...", "dueDate":"YYYY-MM-DD" | null}]}',
     globalInstruction ? `Global instruction: ${globalInstruction}` : '',
     '',
@@ -271,7 +302,7 @@ export const generateSubtasks = async ({ task, ancestors = [], conversation = []
   let modelUsed;
   let totalCostUsd;
   try {
-    const result = await callOpenRouter({
+    const result = await callAiProvider({
       messages: [
         { role: 'system', content: 'You are a planning assistant that outputs strict JSON. No prose.' },
         { role: 'user', content: userContent }
@@ -291,7 +322,7 @@ export const generateSubtasks = async ({ task, ancestors = [], conversation = []
     modelUsed = result.modelUsed;
     totalCostUsd = result.totalCostUsd;
   } catch (err) {
-    console.error('[generateSubtasks] OpenRouter request failed', {
+    console.error('[generateSubtasks] AI request failed', {
       modelId,
       supportsFiles: supportsFilesFlag,
       imageParts: imageParts.length,
@@ -407,7 +438,7 @@ export const chatWithPlanner = async ({ prompt, tasks, globalInstruction, select
   let requestedFiles = [];
   if (supportsFilesFlag && allAttachments.length) {
     try {
-      const selection = await callOpenRouter({
+      const selection = await callAiProvider({
         messages: [
           { role: 'system', content: 'You select attachments to open. Return only JSON with a files array.' },
           { role: 'user', content: selectionPrompt }
@@ -479,7 +510,7 @@ export const chatWithPlanner = async ({ prompt, tasks, globalInstruction, select
     ...pdfParts
   ];
 
-  const { content, usage, modelUsed, totalCostUsd } = await callOpenRouter({
+  const { content, usage, modelUsed, totalCostUsd } = await callAiProvider({
     messages: [
       { role: 'system', content: `${system} ${clientTimeZone ? `Assume user's timezone: ${clientTimeZone}.` : ''}` },
       { role: 'user', content: userContent }

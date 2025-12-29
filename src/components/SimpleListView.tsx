@@ -182,6 +182,11 @@ const ListItem = ({
   const descriptionText = task.description?.trim() ?? '';
   const hasDescription = descriptionText.length > 0;
   const hasMinBalance = (balanceCents ?? 0) >= 50;
+  const splitDisabledReason = !hasMinBalance
+    ? 'Minimum $0.50 balance required to use AI features.'
+    : !canSplit
+      ? 'Due today or overdue; adjust due date before splitting.'
+      : undefined;
 
   // Keep local edit buffers in sync when props change and we're not editing
   useEffect(() => {
@@ -521,8 +526,8 @@ const ListItem = ({
                 setContextMenu(null);
                 onSplit(task.id);
               }}
-              disabled={!canSplit || isDone || planningIds?.has(task.id)}
-              title={!canSplit ? 'Due today or overdue; adjust due date before splitting.' : undefined}
+              disabled={!hasMinBalance || !canSplit || isDone || planningIds?.has(task.id)}
+              title={splitDisabledReason}
             >
               {planningIds?.has(task.id) ? 'Planning…' : '🤖 AI split'}
             </button>

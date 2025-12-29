@@ -1189,7 +1189,9 @@ textarea {
   position: fixed;
   inset: 0;
   z-index: 1200;
-  pointer-events: none;
+  pointer-events: auto;
+  touch-action: none;
+  overscroll-behavior: contain;
 }
 .onboarding-spotlight {
   position: fixed;
@@ -1586,10 +1588,28 @@ select { min-width: 220px; }
   justify-content: center;
   margin-top: 8px;
 }
-.settings-footer {
-  margin-top: var(--space-lg);
-  padding-top: var(--space-md);
-  border-top: 1px solid var(--border);
+.settings-about {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  background: var(--panel-muted);
+}
+.settings-about-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  font-size: 13px;
+}
+.settings-about-row a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.settings-about-row a:hover {
+  text-decoration: underline;
 }
 .trash-subtasks {
   margin-top: var(--space-sm);
@@ -1776,17 +1796,4 @@ select { min-width: 220px; }
   resize: none;
   min-height: 44px;
   max-height: 120px;
-}
-
-/* Footer */
-footer {
-  padding-top: var(--space-lg);
-  border-top: 1px solid var(--border);
-  text-align: center;
-}
-
-@media (max-width: 768px) {
-  footer {
-    display: none;
-  }
 }

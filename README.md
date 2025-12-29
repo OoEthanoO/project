@@ -34,8 +34,14 @@ Turn assignments, exams, and projects into day-by-day plans. Add tasks with due 
   ```bash
   OPENROUTER_API_KEY=sk-...
   # OPENROUTER_BASE_URL=https://openrouter.ai/api/v1/chat/completions # override if needed
+  # AI_PROVIDER=openrouter
+  # AI_API_KEY=sk-... # optional alias for future providers
+  # AI_BASE_URL=https://openrouter.ai/api/v1/chat/completions
+  # AI_AUTH_HEADER=Authorization
+  # AI_AUTH_PREFIX=Bearer
   ```
-- The model defaults to Tier 0 (free text-only model). Users can change models in the UI dropdown.
+- The model is fixed to `google/gemini-3-pro-preview` and there is no UI model selector.
+- For a future Vertex AI migration, set `AI_PROVIDER=vertex`, update `AI_BASE_URL` to the Vertex endpoint, and supply an OAuth token via `AI_API_KEY` (the request adapter lives in `server/ai.js`).
 - All `/api/ai/*` calls go through the Express server.
 
 ## File storage (Cloudflare R2)
