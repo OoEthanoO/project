@@ -1201,7 +1201,12 @@ select { min-width: 220px; }
 }
 .account-email { font-size: 11px; }
 .account-card:hover {
-  opacity: 0.9;
+  background: #eef1f7;
+}
+@media (prefers-color-scheme: dark) {
+  .account-card:hover {
+    background: #20263a;
+  }
 }
 @media (max-width: 768px) {
   .account-card {
@@ -1226,6 +1231,15 @@ select { min-width: 220px; }
   padding: var(--space-sm);
   z-index: 1000;
   animation: slideDown 180ms ease;
+}
+.account-dropdown-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  background: transparent;
+  cursor: default;
+  touch-action: none;
+  overscroll-behavior: contain;
 }
 .account-dropdown button {
   width: 100%;

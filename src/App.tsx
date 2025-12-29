@@ -213,19 +213,6 @@ const App = () => {
 
   // Remove auto-select effect
 
-  // Close account dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = () => {
-      if (showAccountDropdown) {
-        setShowAccountDropdown(false);
-      }
-    };
-    if (showAccountDropdown) {
-      document.addEventListener('click', handleClickOutside);
-      return () => document.removeEventListener('click', handleClickOutside);
-    }
-  }, [showAccountDropdown]);
-
   // Reload if server version changes (detect new deploy)
   useEffect(() => {
     let cancelled = false;
@@ -794,6 +781,16 @@ const App = () => {
 
   const mainPlanner = (
     <div className="app-shell">
+      {showAccountDropdown && (
+        <div
+          className="account-dropdown-backdrop"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setShowAccountDropdown(false);
+          }}
+        />
+      )}
       {/* Header outside of scrollable area */}
       <div className="header">
         <div>
