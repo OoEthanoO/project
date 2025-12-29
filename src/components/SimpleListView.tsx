@@ -3,6 +3,7 @@ import AttachmentList from './AttachmentList';
 import { useEffect, useState, MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { extractAttachment } from '../lib/file-extract';
+import { apiCall } from '../lib/api-client.js';
 
 type Props = {
   tasks: TaskNode[];
@@ -11,6 +12,8 @@ type Props = {
   onUpdate: (id: string, updates: Partial<TaskNode>) => void;
   planningIds?: Set<string>;
   onEditModeChange?: (isEditing: boolean) => void;
+  userId?: string;
+  balanceCents?: number;
 };
 
 type FlatTask = TaskNode & { depth: number; order: number; parentTitle?: string };
@@ -77,7 +80,47 @@ const isDueTodayOrPast = (dueDate?: string) => {
   return due <= todayUtc;
 };
 
-const SimpleListView = ({ tasks, onSplit, onDelete, onUpdate, planningIds = new Set(), onEditModeChange }: Props) => {
+const uploadPendingAttachments = async (attachments: Attachment[], userId?: string): Promise<Attachment[]> => {
+  if (!attachments.length) return attachments;
+  return Promise.all(
+    attachments.map(async (a): Promise<Attachment> => {
+      if (a.extractionStatus !== 'pending' || !a.file) return a;
+      if (!userId) {
+        return { ...a, extractionStatus: 'error', note: 'Login required for file uploads' };
+      }
+      try {
+        const urlResponse = await apiCall('/api/upload-url', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fileName: a.name,
+            contentType: a.contentType || a.type || 'application/octet-stream',
+            userId
+          })
+        });
+        if (!urlResponse.ok) {
+          const error = await urlResponse.text();
+          return { ...a, extractionStatus: 'error', note: `Upload failed: ${error}` };
+        }
+        const { uploadUrl, key } = await urlResponse.json();
+        const putRes = await fetch(uploadUrl, {
+          method: 'PUT',
+          headers: { 'Content-Type': a.contentType || a.type || 'application/octet-stream' },
+          body: a.file as any
+        });
+        if (!putRes.ok) {
+          const error = await putRes.text();
+          return { ...a, extractionStatus: 'error', note: `R2 upload failed: ${error}` };
+        }
+        return { ...a, r2Key: key, extractionStatus: 'ok', file: undefined };
+      } catch (err: any) {
+        return { ...a, extractionStatus: 'error', note: err?.message || 'Upload error' };
+      }
+    })
+  );
+};
+
+const SimpleListView = ({ tasks, onSplit, onDelete, onUpdate, planningIds = new Set(), onEditModeChange, userId, balanceCents }: Props) => {
   const flat = flattenTasks(tasks || []);
   const openAndProgress = flat.filter((t) => t.status !== 'done').sort(compareTasks);
   const completed = flat.filter((t) => t.status === 'done').sort((a, b) => -compareTasks(a, b));
@@ -94,6 +137,8 @@ const SimpleListView = ({ tasks, onSplit, onDelete, onUpdate, planningIds = new 
           onUpdate={onUpdate}
           planningIds={planningIds}
           onEditModeChange={onEditModeChange}
+          userId={userId}
+          balanceCents={balanceCents}
         />
       ))}
     </div>
@@ -106,7 +151,9 @@ const ListItem = ({
   onDelete,
   onUpdate,
   planningIds,
-  onEditModeChange
+  onEditModeChange,
+  userId,
+  balanceCents
 }: {
   task: FlatTask;
   onSplit: (id: string) => void;
@@ -114,6 +161,8 @@ const ListItem = ({
   onUpdate: (id: string, updates: Partial<TaskNode>) => void;
   planningIds?: Set<string>;
   onEditModeChange?: (isEditing: boolean) => void;
+  userId?: string;
+  balanceCents?: number;
 }) => {
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(task.title);
@@ -121,6 +170,8 @@ const ListItem = ({
   const [startDate, setStartDate] = useState(task.startDate || '');
   const [description, setDescription] = useState(task.description || '');
   const [attachments, setAttachments] = useState<Attachment[]>(task.attachments || []);
+  const [attachError, setAttachError] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [isMobile, setIsMobile] = useState(false);
   const isStartAfterDue = task.startDate && task.dueDate && task.startDate >= task.dueDate;
@@ -130,6 +181,7 @@ const ListItem = ({
   const isSplitting = planningIds?.has(task.id);
   const descriptionText = task.description?.trim() ?? '';
   const hasDescription = descriptionText.length > 0;
+  const hasMinBalance = (balanceCents ?? 0) >= 50;
 
   // Keep local edit buffers in sync when props change and we're not editing
   useEffect(() => {
@@ -179,14 +231,52 @@ const ListItem = ({
   };
 
   const handleSave = () => {
-    onUpdate(task.id, {
-      title: title.trim() || '(untitled)',
-      dueDate: dueDate || undefined,
-      startDate: startDate || undefined,
-      description: description.trim(),
-      attachments
+    const run = async () => {
+      setIsUploading(true);
+      const uploaded = await uploadPendingAttachments(attachments, userId);
+      setIsUploading(false);
+      onUpdate(task.id, {
+        title: title.trim() || '(untitled)',
+        dueDate: dueDate || undefined,
+        startDate: startDate || undefined,
+        description: description.trim(),
+        attachments: uploaded
+      });
+      setEditing(false);
+    };
+    run();
+  };
+
+  const handleFiles = async (files: FileList | null) => {
+    if (!files) return;
+    if (!userId) {
+      setAttachError('You must be logged in to upload files.');
+      return;
+    }
+    if (!hasMinBalance) {
+      setAttachError('File uploads require a minimum balance of $0.50. Please top up your account.');
+      return;
+    }
+    const allowed = ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'gif'];
+    const incoming = Array.from(files);
+    const disallowed = incoming.filter((f) => {
+      const ext = (f.name.split('.').pop() || '').toLowerCase();
+      return !allowed.includes(ext);
     });
-    setEditing(false);
+    if (disallowed.length) {
+      setAttachError(
+        'Only PDF or image files (jpg, jpeg, png, webp, gif) are supported. Convert other files to PDF or attach via URL.'
+      );
+      return;
+    }
+    const tooLarge = incoming.filter((f) => f.size > 10 * 1024 * 1024);
+    if (tooLarge.length) {
+      setAttachError('Files must be 10 MB or smaller. Please compress or split the PDF.');
+      return;
+    }
+    setAttachError('');
+    const extracted = await Promise.all(incoming.map((file) => extractAttachment(file, userId)));
+    setAttachments((prev) => [...prev, ...extracted]);
   };
 
   const handleCopyDescription = () => {
@@ -358,15 +448,26 @@ const ListItem = ({
             type="file"
             multiple
             onClick={(e) => e.stopPropagation()}
-            onChange={async (e) => {
+            onChange={(e) => {
               e.stopPropagation();
-              const files = e.target.files;
-              if (!files) return;
-              const extracted = await Promise.all(Array.from(files).map((f) => extractAttachment(f)));
-              setAttachments((prev) => [...prev, ...extracted]);
+              handleFiles(e.target.files);
               e.target.value = '';
             }}
+            disabled={!hasMinBalance}
           />
+          {!hasMinBalance && (
+            <p className="muted" style={{ color: '#f88', fontSize: 12, margin: '4px 0' }}>
+              File uploads require a minimum balance of $0.50. Please top up your account.
+            </p>
+          )}
+          <p className="muted" style={{ fontSize: 12, margin: '4px 0' }}>
+            Supported: PDF, JPG, JPEG, PNG, WEBP, GIF. Maximum 10 MB per file.
+          </p>
+          {attachError && (
+            <p className="muted" style={{ color: '#f88', marginTop: 4 }}>
+              {attachError}
+            </p>
+          )}
           {attachments.length > 0 && (
             <div className="chips" style={{ marginTop: 6 }}>
               {attachments.map((a) => (
@@ -379,7 +480,7 @@ const ListItem = ({
                     setAttachments((prev) => prev.filter((att) => att.id !== a.id));
                   }}
                 >
-                  {a.name} ✕
+                  {a.name} {a.extractionStatus && `(${a.extractionStatus})`} ✕
                 </button>
               ))}
             </div>
@@ -390,8 +491,8 @@ const ListItem = ({
       )}
       <div className="task-actions" style={editing ? { display: 'flex' } : undefined}>
         {editing && (
-          <button className="primary" onClick={handleSave}>
-            Save
+          <button className="primary" onClick={handleSave} disabled={isUploading}>
+            {isUploading ? 'Saving...' : 'Save'}
           </button>
         )}
       </div>

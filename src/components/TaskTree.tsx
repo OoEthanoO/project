@@ -4,6 +4,7 @@ import { Attachment, TaskNode } from '../types';
 import TaskForm from './TaskForm';
 import AttachmentList from './AttachmentList';
 import { extractAttachment } from '../lib/file-extract';
+import { apiCall } from '../lib/api-client.js';
 
 type Props = {
   tasks: TaskNode[];
@@ -47,6 +48,46 @@ const copyTextToClipboard = async (text: string) => {
   } finally {
     document.body.removeChild(textarea);
   }
+};
+
+const uploadPendingAttachments = async (attachments: Attachment[], userId?: string): Promise<Attachment[]> => {
+  if (!attachments.length) return attachments;
+  return Promise.all(
+    attachments.map(async (a): Promise<Attachment> => {
+      if (a.extractionStatus !== 'pending' || !a.file) return a;
+      if (!userId) {
+        return { ...a, extractionStatus: 'error', note: 'Login required for file uploads' };
+      }
+      try {
+        const urlResponse = await apiCall('/api/upload-url', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fileName: a.name,
+            contentType: a.contentType || a.type || 'application/octet-stream',
+            userId
+          })
+        });
+        if (!urlResponse.ok) {
+          const error = await urlResponse.text();
+          return { ...a, extractionStatus: 'error', note: `Upload failed: ${error}` };
+        }
+        const { uploadUrl, key } = await urlResponse.json();
+        const putRes = await fetch(uploadUrl, {
+          method: 'PUT',
+          headers: { 'Content-Type': a.contentType || a.type || 'application/octet-stream' },
+          body: a.file as any
+        });
+        if (!putRes.ok) {
+          const error = await putRes.text();
+          return { ...a, extractionStatus: 'error', note: `R2 upload failed: ${error}` };
+        }
+        return { ...a, r2Key: key, extractionStatus: 'ok', file: undefined };
+      } catch (err: any) {
+        return { ...a, extractionStatus: 'error', note: err?.message || 'Upload error' };
+      }
+    })
+  );
 };
 
 const TaskTree = ({
@@ -179,6 +220,8 @@ const TaskNodeView = ({
   const [startDate, setStartDate] = useState(task.startDate || '');
   const [description, setDescription] = useState(task.description || '');
   const [attachments, setAttachments] = useState<Attachment[]>(task.attachments || []);
+  const [attachError, setAttachError] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
   const isDone = task.status === 'done';
   const isCollapsed = collapsedIds?.has(task.id) ?? false;
   const isDragging = draggedTaskId === task.id;
@@ -189,6 +232,7 @@ const TaskNodeView = ({
   const isSplitting = planningIds?.has(task.id);
   const descriptionText = task.description?.trim() ?? '';
   const hasDescription = descriptionText.length > 0;
+  const hasMinBalance = (balanceCents ?? 0) >= 50;
 
   console.log('TaskNodeView render - task:', task.id, 'editing:', editing);
 
@@ -251,6 +295,38 @@ const TaskNodeView = ({
       return () => document.removeEventListener('click', handleClickOutside);
     }
   }, [contextMenu]);
+
+  const handleFiles = async (files: FileList | null) => {
+    if (!files) return;
+    if (!userId) {
+      setAttachError('You must be logged in to upload files.');
+      return;
+    }
+    if (!hasMinBalance) {
+      setAttachError('File uploads require a minimum balance of $0.50. Please top up your account.');
+      return;
+    }
+    const allowed = ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'gif'];
+    const incoming = Array.from(files);
+    const disallowed = incoming.filter((f) => {
+      const ext = (f.name.split('.').pop() || '').toLowerCase();
+      return !allowed.includes(ext);
+    });
+    if (disallowed.length) {
+      setAttachError(
+        'Only PDF or image files (jpg, jpeg, png, webp, gif) are supported. Convert other files to PDF or attach via URL.'
+      );
+      return;
+    }
+    const tooLarge = incoming.filter((f) => f.size > 10 * 1024 * 1024);
+    if (tooLarge.length) {
+      setAttachError('Files must be 10 MB or smaller. Please compress or split the PDF.');
+      return;
+    }
+    setAttachError('');
+    const extracted = await Promise.all(incoming.map((file) => extractAttachment(file, userId)));
+    setAttachments((prev) => [...prev, ...(extracted as Attachment[])]);
+  };
 
   useEffect(() => {
     if (!isOnboardingSplitTarget) return;
@@ -572,15 +648,26 @@ const TaskNodeView = ({
             type="file"
             multiple
             onClick={(e) => e.stopPropagation()}
-            onChange={async (e) => {
+            onChange={(e) => {
               e.stopPropagation();
-              const files = e.target.files;
-              if (!files) return;
-              const extracted = await Promise.all(Array.from(files).map((f) => extractAttachment(f)));
-              setAttachments((prev) => [...prev, ...extracted]);
+              handleFiles(e.target.files);
               e.target.value = '';
             }}
+            disabled={!hasMinBalance}
           />
+          {!hasMinBalance && (
+            <p className="muted" style={{ color: '#f88', fontSize: 12, margin: '4px 0' }}>
+              File uploads require a minimum balance of $0.50. Please top up your account.
+            </p>
+          )}
+          <p className="muted" style={{ fontSize: 12, margin: '4px 0' }}>
+            Supported: PDF, JPG, JPEG, PNG, WEBP, GIF. Maximum 10 MB per file.
+          </p>
+          {attachError && (
+            <p className="muted" style={{ color: '#f88', marginTop: 4 }}>
+              {attachError}
+            </p>
+          )}
           {attachments.length > 0 && (
             <div className="chips" style={{ marginTop: 6 }}>
               {attachments.map((a) => (
@@ -593,7 +680,7 @@ const TaskNodeView = ({
                     setAttachments((prev) => prev.filter((att) => att.id !== a.id));
                   }}
                 >
-                  {a.name} ✕
+                  {a.name} {a.extractionStatus && `(${a.extractionStatus})`} ✕
                 </button>
               ))}
             </div>
@@ -606,18 +693,22 @@ const TaskNodeView = ({
         {editing ? (
           <button
             className="primary"
-            onClick={() => {
+            onClick={async () => {
+              setIsUploading(true);
+              const uploaded = await uploadPendingAttachments(attachments, userId);
+              setIsUploading(false);
               onUpdate(task.id, {
                 title: title.trim() || '(untitled)',
                 dueDate: dueDate || undefined,
                 startDate: startDate || undefined,
                 description: description.trim(),
-                attachments
+                attachments: uploaded
               });
               setEditing(false);
             }}
+            disabled={isUploading}
           >
-            Save
+            {isUploading ? 'Saving...' : 'Save'}
           </button>
         ) : (
           <>

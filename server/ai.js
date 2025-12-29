@@ -44,10 +44,24 @@ const parseJsonContent = (raw) => {
     const lastBrace = candidate.lastIndexOf('}');
     if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
       const sliced = candidate.slice(firstBrace, lastBrace + 1);
-      return JSON.parse(sliced);
+      try {
+        return JSON.parse(sliced);
+      } catch {
+        throw new Error(`Failed to parse JSON. Raw: ${raw.slice(0, 500)}`);
+      }
     }
     throw new Error(`Failed to parse JSON. Raw: ${raw.slice(0, 500)}`);
   }
+};
+
+const attachBillingContext = (err, billing) => {
+  if (err && typeof err === 'object') {
+    err.billing = billing;
+    return err;
+  }
+  const wrapped = new Error(typeof err === 'string' ? err : 'AI request failed');
+  wrapped.billing = billing;
+  return wrapped;
 };
 
 const summarizeAttachments = (attachments = [], maxItems = 3, maxChars = 800) => {
@@ -84,11 +98,35 @@ const callOpenRouter = async ({ messages, modelId, plugins }) => {
       plugins
     })
   });
+  const responseHeaders = {};
+  res.headers.forEach((value, key) => {
+    responseHeaders[key] = value;
+  });
+  const responseMeta = {
+    status: res.status,
+    statusText: res.statusText,
+    headers: responseHeaders
+  };
   if (!res.ok) {
     const text = await res.text();
+    console.error('[OpenRouter] Non-OK response body:', text);
+    console.error('[OpenRouter] Response meta:', responseMeta);
     throw new Error(`OpenRouter request failed: ${res.status} ${text}`);
   }
-  const data = await res.json();
+  const rawText = await res.text();
+  let data;
+  try {
+    data = JSON.parse(rawText);
+  } catch (err) {
+    console.error('[OpenRouter] Failed to parse JSON response:', {
+      error: err?.message || err,
+      meta: responseMeta,
+      trimmedLength: rawText.trim().length,
+      full: rawText,
+      length: rawText.length
+    });
+    throw new Error(`OpenRouter response parse failed: ${err?.message || err}`);
+  }
   const content = data?.choices?.[0]?.message?.content;
   if (!content) throw new Error('OpenRouter returned empty content.');
   
@@ -148,9 +186,23 @@ export const generateSubtasks = async ({ task, ancestors = [], conversation = []
   const pdfAttachments = (task.attachments || [])
     .filter((a) => (a.dataUrl && a.dataUrl.startsWith('data:application/pdf')) || (a.r2Key && a.contentType === 'application/pdf'))
     .slice(0, 2);
-  
+  const attachmentSummary = (task.attachments || []).map((a) => ({
+    name: a.name || a.type || 'file',
+    size: a.size || null,
+    contentType: a.contentType || a.type || 'unknown',
+    extractionStatus: a.extractionStatus || 'unknown',
+    hasR2Key: Boolean(a.r2Key)
+  }));
+  const pdfBytes = pdfAttachments.reduce((sum, a) => sum + (a.size || 0), 0);
+  const imageBytes = imageAttachments.reduce((sum, a) => sum + (a.size || 0), 0);
+
   console.log('[generateSubtasks] Found image attachments:', imageAttachments.length);
   console.log('[generateSubtasks] Found pdf attachments:', pdfAttachments.length);
+  console.log('[generateSubtasks] Attachment sizes (kb):', {
+    pdf: Math.round(pdfBytes / 1024),
+    images: Math.round(imageBytes / 1024)
+  });
+  console.log('[generateSubtasks] Attachment summary:', attachmentSummary);
   
   const resolvedImages = supportsFilesFlag ? await Promise.all(imageAttachments.map(resolveAttachment)) : [];
   const resolvedPdfs = supportsFilesFlag ? await Promise.all(pdfAttachments.map(resolveAttachment)) : [];
@@ -214,31 +266,69 @@ export const generateSubtasks = async ({ task, ancestors = [], conversation = []
     ...pdfParts
   ];
 
-  const { content, usage, modelUsed, totalCostUsd } = await callOpenRouter({
-    messages: [
-      { role: 'system', content: 'You are a planning assistant that outputs strict JSON. No prose.' },
-      { role: 'user', content: userContent }
-    ],
-    modelId,
-    plugins:
-      supportsFilesFlag && pdfParts.length > 0
-        ? [
-            {
-              id: 'file-parser',
-            }
-          ]
-        : undefined
-  });
+  let content;
+  let usage;
+  let modelUsed;
+  let totalCostUsd;
+  try {
+    const result = await callOpenRouter({
+      messages: [
+        { role: 'system', content: 'You are a planning assistant that outputs strict JSON. No prose.' },
+        { role: 'user', content: userContent }
+      ],
+      modelId,
+      plugins:
+        supportsFilesFlag && pdfParts.length > 0
+          ? [
+              {
+                id: 'file-parser',
+              }
+            ]
+          : undefined
+    });
+    content = result.content;
+    usage = result.usage;
+    modelUsed = result.modelUsed;
+    totalCostUsd = result.totalCostUsd;
+  } catch (err) {
+    console.error('[generateSubtasks] OpenRouter request failed', {
+      modelId,
+      supportsFiles: supportsFilesFlag,
+      imageParts: imageParts.length,
+      pdfParts: pdfParts.length,
+      error: err?.message || err
+    });
+    throw err;
+  }
 
-  const parsed = parseJsonContent(content);
+  const billing = { usage, modelUsed, totalCostUsd };
+  let parsed;
+  try {
+    parsed = parseJsonContent(content);
+  } catch (err) {
+    console.error('[generateSubtasks] Failed to parse model response', {
+      modelId,
+      preview: (content || '').slice(0, 200),
+      error: err?.message || err
+    });
+    throw attachBillingContext(err, billing);
+  }
   const items = parsed.items ?? [];
 
-  const mapped = items.map((item) => ({
-    title: item.title,
-    description: item.description || `Auto-planned from "${task.title}".`,
-    dueDate: item.dueDate ?? null
-  }));
-  return { items: mapped, usage, modelUsed, totalCostUsd };
+  try {
+    const mapped = items.map((item) => ({
+      title: item.title,
+      description: item.description || `Auto-planned from "${task.title}".`,
+      dueDate: item.dueDate ?? null
+    }));
+    return { items: mapped, usage, modelUsed, totalCostUsd };
+  } catch (err) {
+    console.error('[generateSubtasks] Failed to map model items', {
+      modelId,
+      error: err?.message || err
+    });
+    throw attachBillingContext(err, billing);
+  }
 };
 
 export const chatWithPlanner = async ({ prompt, tasks, globalInstruction, selectedTaskId, modelId, clientLocalDate, clientTimeZone }) => {

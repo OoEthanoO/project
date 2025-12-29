@@ -18,6 +18,30 @@ const normalizeBaseUrl = (value) => {
   return `${isLocal ? 'http' : 'https'}://${trimmed}`;
 };
 
+const chargeFailedAiRequest = async ({ userId, billing, description }) => {
+  if (!billing || !billing.totalCostUsd || billing.totalCostUsd <= 0) return null;
+  const amountCents = Math.ceil(billing.totalCostUsd * 100 * 2);
+  try {
+    await chargeUsage({
+      userId,
+      amountCents,
+      model: billing.modelUsed,
+      promptTokens: billing.usage?.prompt_tokens || 0,
+      completionTokens: billing.usage?.completion_tokens || 0,
+      description
+    });
+    console.warn('[billing] Charged for failed AI request:', {
+      userId,
+      amountCents,
+      model: billing.modelUsed
+    });
+    return amountCents;
+  } catch (err) {
+    console.error('[billing] Failed to charge for failed AI request:', err);
+    return null;
+  }
+};
+
 const app = express();
 // Environment diagnostics (no secrets printed)
 console.log('[env] DATABASE_URL set:', !!process.env.DATABASE_URL);
@@ -76,6 +100,14 @@ app.post('/api/ai/split', async (req, res) => {
     }
     res.json({ items: result.items });
   } catch (err) {
+    const billing = err?.billing;
+    if (billing?.totalCostUsd) {
+      await chargeFailedAiRequest({
+        userId: req.body?.userId,
+        billing,
+        description: 'AI split charge (failed request)'
+      });
+    }
     res.status(500).json({ error: (err && err.message) || 'Unknown error' });
   }
 });
@@ -103,6 +135,14 @@ app.post('/api/ai/chat', async (req, res) => {
     }
     res.json({ content: result.content });
   } catch (err) {
+    const billing = err?.billing;
+    if (billing?.totalCostUsd) {
+      await chargeFailedAiRequest({
+        userId: req.body?.userId,
+        billing,
+        description: 'AI coach charge (failed request)'
+      });
+    }
     res.status(500).json({ error: (err && err.message) || 'Unknown error' });
   }
 });

@@ -97,6 +97,7 @@ const App = () => {
   const lastSuccessfulSaveRef = useRef(0);
   const saveInFlightRef = useRef(false);
   const pendingSaveRef = useRef<{ payload: SavePayload; saveToken: number } | null>(null);
+  const splitRequestRef = useRef<Map<string, number>>(new Map());
   const lastContentTabRef = useRef<'tree' | 'list' | 'trash'>('tree');
   // Prevent spamming version-update logs and duplicate reload timers
   const pendingReloadRef = useRef(false);
@@ -944,6 +945,13 @@ const App = () => {
     if (!parent) return;
     const aiChildren = (parent.children || []).filter((child) => child.createdBy === 'ai');
     if (aiChildren.length === 0) return;
+    splitRequestRef.current.set(parentId, Date.now());
+    setPlanningIds((prev) => {
+      if (!prev.has(parentId)) return prev;
+      const next = new Set(prev);
+      next.delete(parentId);
+      return next;
+    });
     lastUserActionRef.current = Date.now();
     const deletedAt = new Date().toISOString();
     const trashedCopies = aiChildren.map((child) => {
@@ -988,9 +996,12 @@ const App = () => {
       next.add(id);
       return next;
     });
+    const splitToken = Date.now();
+    splitRequestRef.current.set(id, splitToken);
     try {
       const ancestors = getAncestors(tasks, id);
       const subtasks = await generateSubtasks({ task, ancestors, conversation: messages, globalInstruction, modelId, userId: user.id });
+      if (splitRequestRef.current.get(id) !== splitToken) return;
       lastUserActionRef.current = Date.now();
       setTasks((prev) =>
         updateTask(prev, id, (t) => ({
@@ -998,12 +1009,20 @@ const App = () => {
           children: [...(t.children || []), ...subtasks]
         }))
       );
+    } catch (err) {
+      if (splitRequestRef.current.get(id) === splitToken) {
+        console.error('AI split failed', err);
+        alert(`AI split failed: ${err instanceof Error ? err.message : 'Please try again.'}`);
+      }
     } finally {
       setPlanningIds((prev) => {
         const next = new Set(prev);
         next.delete(id);
         return next;
       });
+      if (splitRequestRef.current.get(id) === splitToken) {
+        splitRequestRef.current.delete(id);
+      }
     }
   };
 
@@ -1581,6 +1600,8 @@ const App = () => {
               onUpdate={handleUpdateTask}
               planningIds={planningIds}
               onEditModeChange={setIsEditingTask}
+              userId={user?.id}
+              balanceCents={balanceCents}
             />
           )
         ) : activeTab === 'trash' ? (
