@@ -11,6 +11,7 @@ type AdminSummary = {
   usageCount?: number;
   topupSumCents?: number;
   usageSumCents?: number;
+  maxUsageCents?: number;
   recentTopups?: { id: string; userId: string; amountCents: number; createdAt: string; provider: string | null; reference: string | null; status: string }[];
 };
 
@@ -120,6 +121,7 @@ const AdminPanel = ({ user }: { user: AccountUser | null }) => {
             <p className="muted">
               Usage charges: {summary.usageCount ?? 0} ({fmtUsd(summary.usageSumCents)})
             </p>
+            <p className="muted">Largest single charge: {fmtUsd(summary.maxUsageCents)}</p>
           </div>
           <div className="task-card">
             <p className="task-title">Top balances</p>

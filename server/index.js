@@ -375,6 +375,10 @@ app.get('/api/admin/summary', async (req, res) => {
       _count: true,
       _sum: { amountCents: true }
     });
+
+    const maxUsage = await prisma.usageTransaction.aggregate({
+      _max: { amountCents: true }
+    });
     
     const recentTopups = await prisma.topUpTransaction.findMany({
       orderBy: { createdAt: 'desc' },
@@ -390,6 +394,7 @@ app.get('/api/admin/summary', async (req, res) => {
       topupSumCents: topups._sum.amountCents || 0,
       usageCount: usages._count,
       usageSumCents: usages._sum.amountCents || 0,
+      maxUsageCents: maxUsage._max.amountCents || 0,
       recentTopups
     });
   } catch (err) {
