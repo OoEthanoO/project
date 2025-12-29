@@ -141,6 +141,8 @@ const TaskNodeView = ({
   const isCollapsed = collapsedIds?.has(task.id) ?? false;
   const isDragging = draggedTaskId === task.id;
   const isDragOver = dragOverTaskId === task.id;
+  const hasChildren = (task.children ?? []).length > 0;
+  const showMenuButton = !isMobile && !editing;
 
   console.log('TaskNodeView render - task:', task.id, 'editing:', editing);
 
@@ -203,6 +205,17 @@ const TaskNodeView = ({
       return () => document.removeEventListener('click', handleClickOutside);
     }
   }, [contextMenu]);
+
+  const handleMenuToggle = (e: MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    if (editing) return;
+    if (contextMenu) {
+      setContextMenu(null);
+      return;
+    }
+    const rect = e.currentTarget.getBoundingClientRect();
+    setContextMenu({ x: rect.left, y: rect.bottom + 6 });
+  };
 
   const handleDragStart = (e: React.DragEvent) => {
     e.stopPropagation();
@@ -321,32 +334,23 @@ const TaskNodeView = ({
       }}
     >
       <div className="task-header">
-        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', flex: 1 }}>
-          <button
-            style={{ 
-              background: 'none', 
-              border: 'none', 
-              padding: 0, 
-              cursor: 'pointer',
-              fontSize: '16px',
-              lineHeight: 1,
-              display: 'flex',
-              alignItems: 'center',
-              marginTop: 2
-            }}
-            onClick={(e) => {
-              e.stopPropagation();
-              const isReverse = e.shiftKey;
-              const nextStatus = isReverse
-                ? task.status === 'open' ? 'done' : task.status === 'done' ? 'in-progress' : 'open'
-                : task.status === 'open' ? 'in-progress' : task.status === 'in-progress' ? 'done' : 'open';
-              onUpdate(task.id, { status: nextStatus });
-            }}
-            title="Click to cycle: open → in-progress → done → open. Shift+click to reverse."
-          >
-            {task.status === 'done' ? '✓' : task.status === 'in-progress' ? '◐' : '○'}
-          </button>          {editing ? (
+        <div className="task-main-row">
+          {editing ? (
             <>
+              <button
+                className={`task-status-toggle status-${task.status || 'open'}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const isReverse = e.shiftKey;
+                  const nextStatus = isReverse
+                    ? task.status === 'open' ? 'done' : task.status === 'done' ? 'in-progress' : 'open'
+                    : task.status === 'open' ? 'in-progress' : task.status === 'in-progress' ? 'done' : 'open';
+                  onUpdate(task.id, { status: nextStatus });
+                }}
+                title="Click to cycle: open → in-progress → done → open. Shift+click to reverse."
+              >
+                {task.status === 'done' ? '✓' : task.status === 'in-progress' ? '◐' : '○'}
+              </button>
               <div className="form-row">
                 <div>
                   <label className="muted">Title</label>
@@ -387,8 +391,22 @@ const TaskNodeView = ({
               </div>
             </>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <div className="task-title-stack">
+              <div className="task-title-row">
+                <button
+                  className={`task-status-toggle status-${task.status || 'open'}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const isReverse = e.shiftKey;
+                    const nextStatus = isReverse
+                      ? task.status === 'open' ? 'done' : task.status === 'done' ? 'in-progress' : 'open'
+                      : task.status === 'open' ? 'in-progress' : task.status === 'in-progress' ? 'done' : 'open';
+                    onUpdate(task.id, { status: nextStatus });
+                  }}
+                  title="Click to cycle: open → in-progress → done → open. Shift+click to reverse."
+                >
+                  {task.status === 'done' ? '✓' : task.status === 'in-progress' ? '◐' : '○'}
+                </button>
                 <p className={`task-title ${isDone ? 'task-done' : ''}`} style={{ margin: 0 }}>{task.title}</p>
                 {task.createdBy === 'ai' && (
                   <span className="badge badge-ai" style={{ fontSize: 10, padding: '2px 6px' }}>
@@ -397,34 +415,60 @@ const TaskNodeView = ({
                 )}
               </div>
               {task.dueDate && (
-                <span className="muted" style={{ fontSize: 11 }}>{task.dueDate}</span>
+                <span className="muted task-due-date">
+                  {task.startDate ? `${task.startDate} to ${task.dueDate}` : task.dueDate}
+                </span>
               )}
             </div>
           )}
         </div>
-        {task.children?.length ? (
-          <button
-            type="button"
-            className="secondary"
-            style={{ 
-              padding: '4px 8px', 
-              minWidth: 0, 
-              width: 32, 
-              marginLeft: 8, 
-              border: 'none',
-              boxShadow: 'none',
-              transition: 'box-shadow 180ms ease'
-            }}
-            onMouseEnter={(e) => e.currentTarget.style.boxShadow = 'var(--shadow-sm)'}
-            onMouseLeave={(e) => e.currentTarget.style.boxShadow = 'none'}
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggleCollapsed?.(task.id);
-            }}
-          >
-            {isCollapsed ? '›' : '∨'}
-          </button>
-        ) : null}
+        {(showMenuButton || hasChildren) && (
+          <div className="task-header-actions">
+            {showMenuButton && (
+              <button
+                type="button"
+                className="secondary collapse-toggle menu-toggle"
+                style={{ 
+                  padding: '4px 8px', 
+                  minWidth: 0, 
+                  width: 32, 
+                  border: 'none',
+                  boxShadow: 'none',
+                  transition: 'box-shadow 180ms ease'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.boxShadow = 'var(--shadow-sm)'}
+                onMouseLeave={(e) => e.currentTarget.style.boxShadow = 'none'}
+                onClick={handleMenuToggle}
+                aria-label="Open task menu"
+                title="Task actions"
+              >
+                ...
+              </button>
+            )}
+            {hasChildren ? (
+              <button
+                type="button"
+                className="secondary collapse-toggle"
+                style={{ 
+                  padding: '4px 8px', 
+                  minWidth: 0, 
+                  width: 32, 
+                  border: 'none',
+                  boxShadow: 'none',
+                  transition: 'box-shadow 180ms ease'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.boxShadow = 'var(--shadow-sm)'}
+                onMouseLeave={(e) => e.currentTarget.style.boxShadow = 'none'}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleCollapsed?.(task.id);
+                }}
+              >
+                {isCollapsed ? '›' : '∨'}
+              </button>
+            ) : null}
+          </div>
+        )}
       </div>
       {editing ? (
         <textarea
@@ -573,7 +617,7 @@ const TaskNodeView = ({
       )}
       
       {/* Mobile task detail modal */}
-      {showMobileModal && isMobile && (
+      {showMobileModal && isMobile && createPortal(
         <div className="modal-backdrop" onClick={() => setShowMobileModal(false)}>
           <div className="modal mobile-task-modal" onClick={(e) => e.stopPropagation()}>
             <div style={{ marginBottom: 12 }}>
@@ -681,7 +725,8 @@ const TaskNodeView = ({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
       
       {/* Desktop context menu */}

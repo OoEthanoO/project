@@ -8,7 +8,7 @@ const AttachmentList = ({ attachments }: Props) => {
   const files = attachments ?? [];
   if (!files.length) return null;
   return (
-    <div className="task-meta" style={{ flexWrap: 'wrap' }}>
+    <div className="attachment-list">
       {files.map((a, idx) => (
         <span key={a.id || `${a.name}-${idx}`} className="tag">
           {a.name}

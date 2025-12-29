@@ -48,7 +48,7 @@ const App = () => {
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [showInstructionModal, setShowInstructionModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
-  const [activeTab, setActiveTab] = useState<'tree' | 'list' | 'trash'>('tree');
+  const [activeTab, setActiveTab] = useState<'tree' | 'list' | 'trash' | 'settings'>('tree');
   const [messages, setMessages] = useState<ChatMessage[]>([initialCoachMessage()]);
   const [user, setUser] = useState(() => currentUser());
   const [hydrated, setHydrated] = useState(false);
@@ -64,6 +64,7 @@ const App = () => {
   const [settingsView, setSettingsView] = useState<'main' | 'backup'>('main');
   // Track recent user-initiated mutations (e.g., rapid keyboard reorders) to avoid poll overwrites
   const lastUserActionRef = useRef(0);
+  const lastContentTabRef = useRef<'tree' | 'list' | 'trash'>('tree');
   // Prevent spamming version-update logs and duplicate reload timers
   const pendingReloadRef = useRef(false);
   const navigate = useNavigate();
@@ -80,6 +81,12 @@ const App = () => {
   const modelDesc =
     modelTiers.find((t) => t.id === modelId)?.note ||
     'Pick a model tier. Paid tiers handle attachments; Tier 0 is text-only.';
+
+  useEffect(() => {
+    if (activeTab !== 'settings') {
+      lastContentTabRef.current = activeTab;
+    }
+  }, [activeTab]);
 
   // Check for available backup when user logs in or tasks change
   useEffect(() => {
@@ -442,13 +449,9 @@ const App = () => {
       });
     };
     walk(tasks);
-    const nextDue = all
-      .filter((t) => t.dueDate)
-      .sort((a, b) => (a.dueDate || '').localeCompare(b.dueDate || ''))[0]?.dueDate;
     return {
       total: all.length,
-      hasContext: all.some((t) => t.attachments.length > 0 || t.description),
-      nextDue
+      hasContext: all.some((t) => t.attachments.length > 0 || t.description)
     };
   }, [tasks]);
 
@@ -620,11 +623,176 @@ const App = () => {
     }
   };
 
+  const renderSettingsContent = (onDone: () => void) => {
+    const closeSettings = () => {
+      setSettingsView('main');
+      onDone();
+    };
+
+    if (settingsView === 'backup' && backupAvailable) {
+      return (
+        <>
+          <p className="task-title">Backup details</p>
+          <p className="muted">Review the backup contents and compare with your current plan.</p>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div>
+              <p className="task-title" style={{ fontSize: 14, marginBottom: 6 }}>Current plan</p>
+              <p className="muted" style={{ marginTop: 0 }}>Tasks: {tasks.length}</p>
+              <ul style={{ maxHeight: 160, overflow: 'auto', paddingLeft: 18 }}>
+                {(tasks || []).slice(0, 50).map((t) => (
+                  <li key={t.id}>{t.title}</li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <p className="task-title" style={{ fontSize: 14, marginBottom: 6 }}>Backup from {new Date(backupAvailable.timestamp).toLocaleString()}</p>
+              <p className="muted" style={{ marginTop: 0 }}>Tasks: {backupAvailable.taskCount}</p>
+              <ul style={{ maxHeight: 160, overflow: 'auto', paddingLeft: 18 }}>
+                {(backupAvailable.tasks || []).slice(0, 50).map((t: any, idx: number) => (
+                  <li key={t.id || idx}>{t.title}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+          <div style={{ marginTop: 12 }}>
+            <p className="muted" style={{ fontSize: 12 }}>
+              Differences: {Math.abs((backupAvailable.taskCount || 0) - (tasks.length || 0))} task(s) difference.
+            </p>
+          </div>
+          <div className="task-actions" style={{ marginTop: 12 }}>
+            <button className="secondary" onClick={() => setSettingsView('main')}>← Back</button>
+            <button
+              className="primary"
+              onClick={async () => {
+                if (!user) return;
+                const confirmed = window.confirm('Restore this backup and replace your current tasks?');
+                if (!confirmed) return;
+                try {
+                  const restored = restoreFromBackup(user.id);
+                  lastUserActionRef.current = Date.now();
+                  setTasks(restored.tasks);
+                  setTrash(restored.trash);
+                  await saveState(user.id, {
+                    tasks: restored.tasks,
+                    trash: restored.trash,
+                    chat: messages,
+                    config: { globalInstruction, modelId }
+                  });
+                  clearBackup(user.id);
+                  setBackupAvailable(null);
+                  closeSettings();
+                  alert('Backup restored successfully!');
+                } catch (e) {
+                  alert('Failed to restore backup: ' + (e instanceof Error ? e.message : 'Unknown error'));
+                }
+              }}
+            >
+              Restore backup
+            </button>
+          </div>
+        </>
+      );
+    }
+
+    return (
+      <>
+        <p className="task-title">Settings</p>
+        
+        <div style={{ marginBottom: 'var(--space-xl)' }}>
+          <p style={{ fontWeight: 600, marginBottom: 'var(--space-sm)' }}>Global instructions</p>
+          <p className="muted" style={{ marginBottom: 'var(--space-sm)' }}>Guidance the AI should always apply (e.g., "finish a few days early").</p>
+          <textarea
+            placeholder="Try to plan tasks to finish a few days earlier than the due date…"
+            value={globalInstruction}
+            onChange={(e) => setGlobalInstruction(e.target.value)}
+            style={{ minHeight: 80 }}
+          />
+          <button className="secondary" onClick={() => setGlobalInstruction('')} style={{ marginTop: 'var(--space-sm)' }}>
+            Clear instructions
+          </button>
+        </div>
+        
+        <div style={{ marginBottom: 'var(--space-xl)' }}>
+          <p style={{ fontWeight: 600, marginBottom: 'var(--space-sm)' }}>AI Model</p>
+          {isPaidModel && !hasMinBalance && (
+            <p style={{ margin: '0 0 var(--space-sm) 0', fontSize: 13, color: '#d32f2f', fontWeight: 500 }}>
+              ⚠️ Minimum $0.50 balance required. Add funds or switch to Tier 0 (free).
+            </p>
+          )}
+          <select
+            value={modelId}
+            onChange={(e) => setModelId(e.target.value)}
+            style={{ width: '100%', marginBottom: 'var(--space-sm)' }}
+          >
+            {modelTiers.map((tier) => {
+              const modelName = tier.id.split('/').pop();
+              return (
+                <option key={tier.id} value={tier.id}>
+                  {tier.label} — {modelName}
+                </option>
+              );
+            })}
+          </select>
+          <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+            {modelTiers.find((t) => t.id === modelId)?.note}
+          </p>
+        </div>
+        
+        {backupAvailable && backupAvailable.taskCount > 0 && (
+          <div style={{ marginBottom: 'var(--space-xl)' }}>
+            <p style={{ fontWeight: 600, marginBottom: 'var(--space-sm)' }}>Backup available</p>
+            <p className="muted" style={{ marginBottom: 'var(--space-sm)' }}>
+              A backup from {new Date(backupAvailable.timestamp).toLocaleString()} was found with {backupAvailable.taskCount} tasks.
+            </p>
+            {tasks.length === 0 ? (
+              <button
+                className="primary"
+                onClick={async () => {
+                  if (!user) return;
+                  try {
+                    const restored = restoreFromBackup(user.id);
+                    lastUserActionRef.current = Date.now();
+                    setTasks(restored.tasks);
+                    setTrash(restored.trash);
+                    await saveState(user.id, {
+                      tasks: restored.tasks,
+                      trash: restored.trash,
+                      chat: messages,
+                      config: { globalInstruction, modelId }
+                    });
+                    clearBackup(user.id);
+                    setBackupAvailable(null);
+                    closeSettings();
+                    alert('Backup restored successfully!');
+                  } catch (e) {
+                    alert('Failed to restore backup: ' + (e instanceof Error ? e.message : 'Unknown error'));
+                  }
+                }}
+              >
+                🔄 Restore backup
+              </button>
+            ) : (
+              <button className="secondary" onClick={() => setSettingsView('backup')}>
+                📦 View backup details
+              </button>
+            )}
+          </div>
+        )}
+        
+        <div className="task-actions">
+          <button className="primary" onClick={closeSettings}>
+            Done
+          </button>
+        </div>
+      </>
+    );
+  };
+
   if (!user) {
     return <AuthForm onLogin={handleAuthLogin} onRegister={handleAuthRegister} notice={authNotice} onClearNotice={() => setAuthNotice('')} />;
   }
 
-  const MainPlanner = () => (
+  const mainPlanner = (
     <div className="app-shell">
       {/* Header outside of scrollable area */}
       <div className="header">
@@ -656,9 +824,9 @@ const App = () => {
             }}
           >
             <span role="img" aria-label="profile">👤</span>
-            <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2 }}>
+            <div className="account-details">
               <strong>{user?.name || 'Account'}</strong>
-              <span className="muted" style={{ fontSize: 11, marginTop: -2 }}>{user?.email}</span>
+              <span className="muted account-email">{user?.email}</span>
             </div>
             {showAccountDropdown && (
               <div 
@@ -760,14 +928,6 @@ const App = () => {
 
         {/* Main panel */}
         <div className="panel">
-          <div className="section-header">
-            <div>
-              <p className="title">Plan</p>
-              <p className="muted">
-                {stats.nextDue ? `Next due: ${stats.nextDue}.` : 'Set due dates to unlock pacing.'}
-              </p>
-            </div>
-          </div>
           {/* Scrollable content area */}
           <div className="panel-content">
         {activeTab === 'tree' ? (
@@ -816,7 +976,7 @@ const App = () => {
             planningIds={planningIds}
             onEditModeChange={setIsEditingTask}
           />
-        ) : (
+        ) : activeTab === 'trash' ? (
           <TrashCan
             items={trash}
             onRestore={(task) => restoreTask(task)}
@@ -827,6 +987,10 @@ const App = () => {
             }}
             onNavigateToPlan={() => setActiveTab('tree')}
           />
+        ) : (
+          <div className="settings-panel">
+            {renderSettingsContent(() => setActiveTab(lastContentTabRef.current))}
+          </div>
         )}
           </div> {/* End panel-content */}
         </div> {/* End panel */}
@@ -869,7 +1033,27 @@ const App = () => {
           <span className="view-icon">🗑️</span>
           <span className="view-label">Trash</span>
         </button>
+        <button 
+          className={`view-tab ${activeTab === 'settings' ? 'active' : ''}`} 
+          onClick={() => {
+            setSettingsView('main');
+            setActiveTab('settings');
+          }}
+        >
+          <span className="view-icon">⚙️</span>
+          <span className="view-label">Settings</span>
+        </button>
       </div>
+
+      {!showTaskModal && (
+        <button
+          className="mobile-fab"
+          onClick={() => setShowTaskModal(true)}
+          aria-label="Add task"
+        >
+          +
+        </button>
+      )}
 
       {/* Footer outside scrollable area */}
       <footer>
@@ -925,163 +1109,7 @@ const App = () => {
       {showSettingsModal && (
         <div className="modal-backdrop" onClick={() => setShowSettingsModal(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640 }}>
-            {settingsView === 'backup' && backupAvailable ? (
-              <>
-                <p className="task-title">Backup details</p>
-                <p className="muted">Review the backup contents and compare with your current plan.</p>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                  <div>
-                    <p className="task-title" style={{ fontSize: 14, marginBottom: 6 }}>Current plan</p>
-                    <p className="muted" style={{ marginTop: 0 }}>Tasks: {tasks.length}</p>
-                    <ul style={{ maxHeight: 160, overflow: 'auto', paddingLeft: 18 }}>
-                      {(tasks || []).slice(0, 50).map((t) => (
-                        <li key={t.id}>{t.title}</li>
-                      ))}
-                    </ul>
-                  </div>
-                  <div>
-                    <p className="task-title" style={{ fontSize: 14, marginBottom: 6 }}>Backup from {new Date(backupAvailable.timestamp).toLocaleString()}</p>
-                    <p className="muted" style={{ marginTop: 0 }}>Tasks: {backupAvailable.taskCount}</p>
-                    <ul style={{ maxHeight: 160, overflow: 'auto', paddingLeft: 18 }}>
-                      {(backupAvailable.tasks || []).slice(0, 50).map((t: any, idx: number) => (
-                        <li key={t.id || idx}>{t.title}</li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-                <div style={{ marginTop: 12 }}>
-                  <p className="muted" style={{ fontSize: 12 }}>
-                    Differences: {Math.abs((backupAvailable.taskCount || 0) - (tasks.length || 0))} task(s) difference.
-                  </p>
-                </div>
-                <div className="task-actions" style={{ marginTop: 12 }}>
-                  <button className="secondary" onClick={() => setSettingsView('main')}>← Back</button>
-                  <button
-                    className="primary"
-                    onClick={async () => {
-                      if (!user) return;
-                      const confirmed = window.confirm('Restore this backup and replace your current tasks?');
-                      if (!confirmed) return;
-                      try {
-                        const restored = restoreFromBackup(user.id);
-                        lastUserActionRef.current = Date.now();
-                        setTasks(restored.tasks);
-                        setTrash(restored.trash);
-                        await saveState(user.id, {
-                          tasks: restored.tasks,
-                          trash: restored.trash,
-                          chat: messages,
-                          config: { globalInstruction, modelId }
-                        });
-                        clearBackup(user.id);
-                        setBackupAvailable(null);
-                        setSettingsView('main');
-                        setShowSettingsModal(false);
-                        alert('Backup restored successfully!');
-                      } catch (e) {
-                        alert('Failed to restore backup: ' + (e instanceof Error ? e.message : 'Unknown error'));
-                      }
-                    }}
-                  >
-                    Restore backup
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <p className="task-title">Settings</p>
-                
-                {/* Global Instructions */}
-                <div style={{ marginBottom: 'var(--space-xl)' }}>
-                  <p style={{ fontWeight: 600, marginBottom: 'var(--space-sm)' }}>Global instructions</p>
-                  <p className="muted" style={{ marginBottom: 'var(--space-sm)' }}>Guidance the AI should always apply (e.g., "finish a few days early").</p>
-                  <textarea
-                    placeholder="Try to plan tasks to finish a few days earlier than the due date…"
-                    value={globalInstruction}
-                    onChange={(e) => setGlobalInstruction(e.target.value)}
-                    style={{ minHeight: 80 }}
-                  />
-                  <button className="secondary" onClick={() => setGlobalInstruction('')} style={{ marginTop: 'var(--space-sm)' }}>
-                    Clear instructions
-                  </button>
-                </div>
-                
-                {/* Model Configuration */}
-                <div style={{ marginBottom: 'var(--space-xl)' }}>
-                  <p style={{ fontWeight: 600, marginBottom: 'var(--space-sm)' }}>AI Model</p>
-                  {isPaidModel && !hasMinBalance && (
-                    <p style={{ margin: '0 0 var(--space-sm) 0', fontSize: 13, color: '#d32f2f', fontWeight: 500 }}>
-                      ⚠️ Minimum $0.50 balance required. Add funds or switch to Tier 0 (free).
-                    </p>
-                  )}
-                  <select
-                    value={modelId}
-                    onChange={(e) => setModelId(e.target.value)}
-                    style={{ width: '100%', marginBottom: 'var(--space-sm)' }}
-                  >
-                    {modelTiers.map((tier) => {
-                      const modelName = tier.id.split('/').pop();
-                      return (
-                        <option key={tier.id} value={tier.id}>
-                          {tier.label} — {modelName}
-                        </option>
-                      );
-                    })}
-                  </select>
-                  <p className="muted" style={{ margin: 0, fontSize: 13 }}>
-                    {modelTiers.find((t) => t.id === modelId)?.note}
-                  </p>
-                </div>
-                
-                {/* Backup Information */}
-                {backupAvailable && backupAvailable.taskCount > 0 && (
-                  <div style={{ marginBottom: 'var(--space-xl)' }}>
-                    <p style={{ fontWeight: 600, marginBottom: 'var(--space-sm)' }}>Backup available</p>
-                    <p className="muted" style={{ marginBottom: 'var(--space-sm)' }}>
-                      A backup from {new Date(backupAvailable.timestamp).toLocaleString()} was found with {backupAvailable.taskCount} tasks.
-                    </p>
-                    {tasks.length === 0 ? (
-                      <button
-                        className="primary"
-                        onClick={async () => {
-                          if (!user) return;
-                          try {
-                            const restored = restoreFromBackup(user.id);
-                            lastUserActionRef.current = Date.now();
-                            setTasks(restored.tasks);
-                            setTrash(restored.trash);
-                            await saveState(user.id, {
-                              tasks: restored.tasks,
-                              trash: restored.trash,
-                              chat: messages,
-                              config: { globalInstruction, modelId }
-                            });
-                            clearBackup(user.id);
-                            setBackupAvailable(null);
-                            setShowSettingsModal(false);
-                            alert('Backup restored successfully!');
-                          } catch (e) {
-                            alert('Failed to restore backup: ' + (e instanceof Error ? e.message : 'Unknown error'));
-                          }
-                        }}
-                      >
-                        🔄 Restore backup
-                      </button>
-                    ) : (
-                      <button className="secondary" onClick={() => setSettingsView('backup')}>
-                        📦 View backup details
-                      </button>
-                    )}
-                  </div>
-                )}
-                
-                <div className="task-actions">
-                  <button className="primary" onClick={() => setShowSettingsModal(false)}>
-                    Done
-                  </button>
-                </div>
-              </>
-            )}
+            {renderSettingsContent(() => setShowSettingsModal(false))}
           </div>
         </div>
       )}
@@ -1136,7 +1164,7 @@ const App = () => {
 
   return (
     <Routes>
-      <Route path="/" element={<MainPlanner />} />
+      <Route path="/" element={mainPlanner} />
       <Route path="/admin" element={<AdminPanel user={user} />} />
     </Routes>
   );

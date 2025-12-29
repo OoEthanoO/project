@@ -124,7 +124,7 @@ const TaskForm = ({ onSubmit, parentId = null, onCancel, userId, balanceCents = 
   };
 
   return (
-    <form className="task-card" onSubmit={handleSubmit}>
+    <form className="task-card task-form" onSubmit={handleSubmit}>
       <div className="form-row">
         <div>
           <label className="muted">Title</label>
