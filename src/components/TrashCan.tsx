@@ -24,6 +24,25 @@ const TrashCan = ({ items, onRestore, onDeleteForever, onNavigateToPlan }: Props
     );
   }
 
+  const renderSubtasks = (nodes: TaskNode[]) => {
+    if (!nodes || nodes.length === 0) return null;
+    return (
+      <ul className="trash-subtask-list">
+        {nodes.map((node) => (
+          <li key={node.id} className="trash-subtask-item">
+            <div className="trash-subtask-row">
+              <span className="trash-subtask-title">{node.title}</span>
+              {node.createdBy === 'ai' && <span className="badge badge-ai">AI</span>}
+              {node.dueDate && <span className="badge">Due {node.dueDate}</span>}
+            </div>
+            {node.description ? <p className="muted trash-subtask-description">{node.description}</p> : null}
+            {(node.children || []).length > 0 ? renderSubtasks(node.children || []) : null}
+          </li>
+        ))}
+      </ul>
+    );
+  };
+
   return (
     <div className="task-list">
       {items.map((task) => (
@@ -45,6 +64,12 @@ const TrashCan = ({ items, onRestore, onDeleteForever, onNavigateToPlan }: Props
           </div>
           {task.description ? <p className="muted" style={{ margin: '8px 0 6px' }}>{task.description}</p> : null}
           <AttachmentList attachments={task.attachments || []} />
+          {(task.children || []).length > 0 && (
+            <div className="trash-subtasks">
+              <p className="muted trash-subtasks-title">Subtasks</p>
+              {renderSubtasks(task.children || [])}
+            </div>
+          )}
           <div className="task-actions">
             <button className="secondary" onClick={() => onRestore(task)}>Restore</button>
             <button className="subtle" onClick={() => onDeleteForever(task.id)}>Delete permanently</button>

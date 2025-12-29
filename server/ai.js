@@ -175,12 +175,14 @@ export const generateSubtasks = async ({ task, ancestors = [], conversation = []
   console.log('[generateSubtasks] Final pdfParts:', pdfParts.length);
 
   const promptText = [
-    'Split the given task into concrete, daily-size subtasks.',
+    'Split the given task into concrete, milestone-based subtasks sized to the work. Do NOT assume a daily split.',
     `Today: ${startDateText}. Treat this as the earliest work date (the later of now or any task start).`,
     'If the parent has a due date, keep every subtask on or before it. Still assign a concrete dueDate after today for every subtask.',
     'Be concise and actionable. Every subtask MUST include a dueDate (YYYY-MM-DD). Never return null for dueDate. Due dates must be AFTER today.',
     'Interpret all due dates as deadlines at the START of that day (00:00), so finish work by the prior day if needed.',
-    'Balance the workload across the available days; do not frontload or backload. If work is in units (pages/chapters/problems), distribute units evenly so daily effort is consistent.',
+    'Distribute work sensibly across the timeline; avoid putting everything at the end, but DO NOT create a subtask for every day.',
+    'If work is in units (pages/chapters/problems), group units into a manageable number of subtasks rather than daily slices.',
+    'Prefer fewer, higher-impact steps; the user can further split subtasks later if they want daily action items.',
     'IMPORTANT: Ensure completeness and symmetry. If you create a subtask for "first half" or "part 1" of something, you MUST also create corresponding subtasks for "second half" or remaining parts. Never leave partial work incomplete.',
     'Do NOT emit or invent a startDate for subtasks; only use dueDate when needed.',
     getTierIndex(modelId) === 3

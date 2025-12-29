@@ -15,6 +15,32 @@ type Props = {
 
 type FlatTask = TaskNode & { depth: number; order: number; parentTitle?: string };
 
+const copyTextToClipboard = async (text: string) => {
+  if (!text) return;
+  try {
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+  } catch (err) {
+    console.warn('Clipboard API failed, falling back to execCommand.', err);
+  }
+  if (typeof document === 'undefined') return;
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', 'true');
+  textarea.style.position = 'fixed';
+  textarea.style.top = '-1000px';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+  textarea.select();
+  try {
+    document.execCommand('copy');
+  } finally {
+    document.body.removeChild(textarea);
+  }
+};
+
 const flattenTasks = (tasks: TaskNode[], depth = 0, orderRef = { value: 0 }, parentTitle?: string): FlatTask[] => {
   return tasks.flatMap((t) => {
     const currentOrder = orderRef.value++;
@@ -60,7 +86,15 @@ const SimpleListView = ({ tasks, onSplit, onDelete, onUpdate, planningIds = new 
   return (
     <div className="task-list">
       {sorted.map((task) => (
-        <ListItem key={task.id} task={task} onSplit={onSplit} onDelete={onDelete} onUpdate={onUpdate} onEditModeChange={onEditModeChange} />
+        <ListItem
+          key={task.id}
+          task={task}
+          onSplit={onSplit}
+          onDelete={onDelete}
+          onUpdate={onUpdate}
+          planningIds={planningIds}
+          onEditModeChange={onEditModeChange}
+        />
       ))}
     </div>
   );
@@ -93,6 +127,9 @@ const ListItem = ({
   const canSplit = !isDueTodayOrPast(task.dueDate) && !isStartAfterDue;
   const isDone = task.status === 'done';
   const showMenuButton = !isMobile && !editing;
+  const isSplitting = planningIds?.has(task.id);
+  const descriptionText = task.description?.trim() ?? '';
+  const hasDescription = descriptionText.length > 0;
 
   // Keep local edit buffers in sync when props change and we're not editing
   useEffect(() => {
@@ -150,6 +187,11 @@ const ListItem = ({
       attachments
     });
     setEditing(false);
+  };
+
+  const handleCopyDescription = () => {
+    if (!hasDescription) return;
+    void copyTextToClipboard(descriptionText);
   };
 
   return (
@@ -257,6 +299,12 @@ const ListItem = ({
                 {task.createdBy === 'ai' && (
                   <span className="badge badge-ai" style={{ fontSize: 10, padding: '2px 6px' }}>
                     AI
+                  </span>
+                )}
+                {isSplitting && (
+                  <span className="badge badge-splitting" title="AI is splitting this task">
+                    <span className="badge-splitting-spinner" aria-hidden="true" />
+                    Splitting…
                   </span>
                 )}
               </div>
@@ -376,6 +424,17 @@ const ListItem = ({
               title={!canSplit ? 'Due today or overdue; adjust due date before splitting.' : undefined}
             >
               {planningIds?.has(task.id) ? 'Planning…' : '🤖 AI split'}
+            </button>
+            <button
+              className="context-menu-item"
+              onClick={() => {
+                setContextMenu(null);
+                handleCopyDescription();
+              }}
+              disabled={!hasDescription}
+              title={!hasDescription ? 'No description to copy.' : 'Copy description'}
+            >
+              📋 Copy description
             </button>
             <button
               className="context-menu-item"

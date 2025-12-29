@@ -50,75 +50,95 @@ const AuthForm = ({ onLogin, onRegister, notice, onClearNotice }: Props) => {
   };
 
   return (
-    <div className="panel" style={{ maxWidth: 420, margin: '40px auto', paddingBottom: 20 }}>
-      <div className="header">
-        <div>
-          <p className="title">{mode === 'login' ? 'Sign in' : 'Create account'}</p>
-          <p className="muted">Access your planner with email + password.</p>
+    <div className="auth-shell">
+      <div className="auth-hero">
+        <div className="auth-brand">YanPlanner</div>
+        <p className="auth-tagline">Turn assignments and exams into a day-by-day plan.</p>
+        <p className="auth-intro">
+          Capture tasks, attach materials, and let the planner split work into clear steps you can follow.
+        </p>
+        <div className="auth-highlights">
+          <div className="auth-highlight">
+            <p className="auth-highlight-title">Stay organized</p>
+            <p className="auth-highlight-text">Tasks, notes, and files in one place.</p>
+          </div>
+          <div className="auth-highlight">
+            <p className="auth-highlight-title">Plan faster</p>
+            <p className="auth-highlight-text">Break big assignments into daily steps.</p>
+          </div>
+          <div className="auth-highlight">
+            <p className="auth-highlight-title">Keep momentum</p>
+            <p className="auth-highlight-text">See what is next without the stress.</p>
+          </div>
         </div>
       </div>
-      <form className="task-card auth-form" onSubmit={handleSubmit} style={{ borderStyle: 'dashed' }}>
-        {notice && (
-          <div className="muted" style={{ color: '#5bd0ff', marginBottom: 10, fontWeight: 600 }}>
-            {notice}
-          </div>
-        )}
-        <div className="form-row">
-          <div>
-            <label className="muted">Email</label>
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-          </div>
-          {mode === 'register' && (
-            <div>
-              <label className="muted">Name</label>
-              <input value={name} onChange={(e) => setName(e.target.value)} />
+      <div className="panel auth-panel">
+        <div className="auth-panel-header">
+          <p className="title auth-title">{mode === 'login' ? 'Sign in' : 'Create account'}</p>
+          <p className="muted auth-subtitle">Access your planner with email and password.</p>
+        </div>
+        <form className="task-card auth-form" onSubmit={handleSubmit}>
+          {notice && (
+            <div className="muted" style={{ color: '#5bd0ff', marginBottom: 10, fontWeight: 600 }}>
+              {notice}
             </div>
           )}
-          <div>
-            <label className="muted">Password</label>
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          <div className="form-row">
+            <div>
+              <label className="muted">Email</label>
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+            </div>
+            {mode === 'register' && (
+              <div>
+                <label className="muted">Name</label>
+                <input value={name} onChange={(e) => setName(e.target.value)} />
+              </div>
+            )}
+            <div>
+              <label className="muted">Password</label>
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+            </div>
           </div>
-        </div>
-        <div className="auth-remember">
-          <input 
-            type="checkbox" 
-            checked={remember} 
-            onChange={(e) => setRemember(e.target.checked)} 
-            id="remember"
-            style={{ cursor: 'pointer', marginTop: 2 }}
-          />
-          <label htmlFor="remember" className="muted" style={{ cursor: 'pointer', margin: 0 }}>
-            Remember me
-          </label>
-        </div>
-        {info && (
-          <p className="muted" style={{ color: '#5bd0ff', marginTop: 8, fontWeight: 600, margin: 0 }}>
-            {info}
-          </p>
-        )}
-        {error && (
-          <p className="muted" style={{ color: '#f88', marginTop: 8, margin: 0 }}>
-            {error}
-          </p>
-        )}
-        <div className="task-actions auth-actions" style={{ marginTop: 12 }}>
-          <button className="primary" type="submit">
-            {mode === 'login' ? 'Login' : 'Register'}
-          </button>
-          <button
-            className="secondary"
-            type="button"
-            onClick={() => {
-              setMode((m) => (m === 'login' ? 'register' : 'login'));
-              setError('');
-              setInfo('');
-              onClearNotice?.();
-            }}
-          >
-            {mode === 'login' ? 'Need an account?' : 'Have an account?'}
-          </button>
-        </div>
-      </form>
+          <div className="auth-remember">
+            <input
+              type="checkbox"
+              checked={remember}
+              onChange={(e) => setRemember(e.target.checked)}
+              id="remember"
+            />
+            <label htmlFor="remember" className="muted">
+              Remember me
+            </label>
+          </div>
+          {info && (
+            <p className="muted" style={{ color: '#5bd0ff', marginTop: 8, fontWeight: 600, margin: 0 }}>
+              {info}
+            </p>
+          )}
+          {error && (
+            <p className="muted" style={{ color: '#f88', marginTop: 8, margin: 0 }}>
+              {error}
+            </p>
+          )}
+          <div className="task-actions auth-actions">
+            <button className="primary" type="submit">
+              {mode === 'login' ? 'Login' : 'Register'}
+            </button>
+            <button
+              className="secondary"
+              type="button"
+              onClick={() => {
+                setMode((m) => (m === 'login' ? 'register' : 'login'));
+                setError('');
+                setInfo('');
+                onClearNotice?.();
+              }}
+            >
+              {mode === 'login' ? 'Need an account?' : 'Have an account?'}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 };

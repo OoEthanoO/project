@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from 'react';
-import { Routes, Route, useNavigate } from 'react-router-dom';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Routes, Route } from 'react-router-dom';
 import TaskForm from './components/TaskForm';
 import TaskTree from './components/TaskTree';
 import TrashCan from './components/TrashCan';
@@ -9,7 +9,6 @@ import AdminPanel from './components/AdminPanel';
 import { ChatMessage, TaskNode } from './types';
 import { addChild, findTask, randomId, removeTask, reorderWithinParent, updateTask, getR2KeysForTask, getAncestors, moveTaskToTop, moveTaskToBottom } from './lib/task-utils';
 import { chatWithPlanner, generateSubtasks } from './lib/ai';
-import { useEffect } from 'react';
 import AuthForm from './components/AuthForm';
 import { currentUser, login, logout, register } from './lib/auth';
 import { fetchState, saveState } from './lib/state';
@@ -25,6 +24,27 @@ const initialCoachMessage = () => ({
     'I can turn assignments and tests into daily, actionable steps. Add tasks with due dates, attach materials (PDFs/images), and hit "AI split" to generate subtasks. The chat stays in sync with your plan.',
   createdAt: new Date().toISOString()
 });
+
+type OnboardingStep = {
+  id: 'add-task' | 'create-task' | 'split-task' | 'settings';
+  title: string;
+  description: string;
+  action: string;
+  placement: 'top' | 'bottom' | 'left' | 'right';
+  getTarget: () => HTMLElement | null;
+  highlightPadding?: number;
+};
+
+type SavePayload = {
+  tasks: TaskNode[];
+  trash: TaskNode[];
+  chat: ChatMessage[];
+  config: {
+    globalInstruction: string;
+    modelId?: string;
+    collapsedTaskIds?: string[];
+  };
+};
 
 const isDueTodayOrPast = (dueDate?: string) => {
   if (!dueDate) return false;
@@ -61,13 +81,29 @@ const App = () => {
   const [isEditingTask, setIsEditingTask] = useState(false); // Track if any task is in edit mode
   const [backupAvailable, setBackupAvailable] = useState<any>(null); // Track if backup exists
   const [showAccountDropdown, setShowAccountDropdown] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [onboardingStep, setOnboardingStep] = useState(0);
+  const [onboardingTargetRect, setOnboardingTargetRect] = useState<DOMRect | null>(null);
+  const onboardingTooltipRef = useRef<HTMLDivElement | null>(null);
+  const [onboardingTooltipHeight, setOnboardingTooltipHeight] = useState(0);
+  const [lastCreatedTaskId, setLastCreatedTaskId] = useState<string | null>(null);
   const [settingsView, setSettingsView] = useState<'main' | 'backup'>('main');
+  const [isMobile, setIsMobile] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.matchMedia('(max-width: 768px)').matches;
+  });
   // Track recent user-initiated mutations (e.g., rapid keyboard reorders) to avoid poll overwrites
   const lastUserActionRef = useRef(0);
+  const lastSuccessfulSaveRef = useRef(0);
+  const saveInFlightRef = useRef(false);
+  const pendingSaveRef = useRef<{ payload: SavePayload; saveToken: number } | null>(null);
   const lastContentTabRef = useRef<'tree' | 'list' | 'trash'>('tree');
   // Prevent spamming version-update logs and duplicate reload timers
   const pendingReloadRef = useRef(false);
-  const navigate = useNavigate();
+  const addTaskButtonRef = useRef<HTMLButtonElement | null>(null);
+  const mobileFabRef = useRef<HTMLButtonElement | null>(null);
+  const settingsButtonRef = useRef<HTMLButtonElement | null>(null);
+  const mobileSettingsTabRef = useRef<HTMLButtonElement | null>(null);
 
   const modelTiers = MODEL_TIERS;
   const [globalInstruction, setGlobalInstruction] = useState('');
@@ -77,16 +113,282 @@ const App = () => {
   const isPaidModel = currentTier?.multimodal ?? false;
   const hasMinBalance = balanceCents >= 50;
   const canUsePaidModel = !isPaidModel || hasMinBalance;
+  const latestStateRef = useRef({
+    tasks,
+    trash,
+    messages,
+    globalInstruction,
+    modelId,
+    collapsedTaskIds
+  });
   
   const modelDesc =
     modelTiers.find((t) => t.id === modelId)?.note ||
     'Pick a model tier. Paid tiers handle attachments; Tier 0 is text-only.';
+  const resolveTarget = (el: HTMLElement | null) => {
+    if (!el) return null;
+    const rect = el.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return null;
+    return el;
+  };
+  const onboardingSteps = useMemo<OnboardingStep[]>(() => ([
+    {
+      id: 'add-task',
+      title: 'Add your first task',
+      description: 'Create tasks with due dates, notes, and uploads in seconds.',
+      action: 'Press Add task or Continue to open the task form.',
+      placement: isMobile ? 'top' : 'right',
+      getTarget: () => resolveTarget(isMobile ? mobileFabRef.current : addTaskButtonRef.current),
+      highlightPadding: 10
+    },
+    {
+      id: 'create-task',
+      title: 'Create the task',
+      description: 'Give it a title and due date so the planner can schedule it.',
+      action: 'Save it, or press Continue to add a sample task.',
+      placement: isMobile ? 'top' : 'right',
+      getTarget: () => {
+        if (typeof document === 'undefined') return null;
+        return resolveTarget(document.querySelector('[data-onboarding="task-modal"]') as HTMLElement | null);
+      },
+      highlightPadding: 8
+    },
+    {
+      id: 'split-task',
+      title: 'Split it into steps',
+      description: 'Break a big task into daily subtasks with one click.',
+      action: 'Click AI split to break your new task into steps.',
+      placement: isMobile ? 'top' : 'left',
+      getTarget: () => {
+        if (typeof document === 'undefined') return null;
+        return resolveTarget(document.querySelector('[data-onboarding="split-task"]') as HTMLElement | null);
+      },
+      highlightPadding: 8
+    },
+    {
+      id: 'settings',
+      title: 'Settings & replay',
+      description: 'Adjust global instructions, model tier, and replay this walkthrough anytime.',
+      action: 'Open Settings anytime to replay this tour.',
+      placement: isMobile ? 'top' : 'right',
+      getTarget: () => resolveTarget(isMobile ? mobileSettingsTabRef.current : settingsButtonRef.current),
+      highlightPadding: 8
+    }
+  ]), [isMobile]);
+  const totalOnboardingSteps = onboardingSteps.length;
+  const currentOnboarding = totalOnboardingSteps
+    ? onboardingSteps[Math.min(onboardingStep, totalOnboardingSteps - 1)]
+    : null;
+  const startOnboarding = () => {
+    setOnboardingStep(0);
+    setLastCreatedTaskId(null);
+    setShowTaskModal(false);
+    setShowOnboarding(true);
+  };
+  const completeOnboarding = () => {
+    if (user) {
+      try {
+        localStorage.setItem(`yanplanner_onboarding_${user.id}`, '1');
+      } catch (err) {
+        console.error('Failed to save onboarding state', err);
+      }
+    }
+    setShowOnboarding(false);
+    setOnboardingTargetRect(null);
+    setShowTaskModal(false);
+  };
+  const formatDateInput = (date: Date) => {
+    const pad = (value: number) => String(value).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  };
+  const createSampleTask = (): TaskNode => {
+    const dueDate = new Date();
+    dueDate.setDate(dueDate.getDate() + 7);
+    return {
+      id: randomId(),
+      title: 'Sample task: History essay',
+      description: 'Use AI split to turn this into daily steps.',
+      dueDate: formatDateInput(dueDate),
+      attachments: [],
+      children: [],
+      parentId: null,
+      status: 'open',
+      createdBy: 'user',
+      createdAt: new Date().toISOString()
+    };
+  };
+  const advanceOnboarding = () => {
+    if (!showOnboarding || totalOnboardingSteps === 0 || !currentOnboarding) return;
+    if (currentOnboarding.id === 'add-task') {
+      setShowTaskModal(true);
+      setOnboardingStep((step) => Math.min(step + 1, totalOnboardingSteps - 1));
+      return;
+    }
+    if (currentOnboarding.id === 'create-task') {
+      const hasOnboardingTask = lastCreatedTaskId ? findTask(tasks, lastCreatedTaskId) : null;
+      if (!hasOnboardingTask) {
+        const sampleTask = createSampleTask();
+        lastUserActionRef.current = Date.now();
+        setTasks((prev) => addChild(prev, null, sampleTask));
+        setLastCreatedTaskId(sampleTask.id);
+      }
+      setShowTaskModal(false);
+      setActiveTab('tree');
+      setOnboardingStep((step) => Math.min(step + 1, totalOnboardingSteps - 1));
+      return;
+    }
+    if (currentOnboarding.id === 'settings' || onboardingStep >= totalOnboardingSteps - 1) {
+      completeOnboarding();
+      return;
+    }
+    setOnboardingStep((step) => Math.min(step + 1, totalOnboardingSteps - 1));
+  };
+  const getTooltipPosition = (rect: DOMRect, placement: OnboardingStep['placement'], tooltipHeight = 190) => {
+    const gutter = isMobile ? 16 : 12;
+    const bottomSafe = isMobile ? 96 : gutter;
+    const width = Math.min(320, window.innerWidth - gutter * 2);
+    const height = Math.min(Math.max(tooltipHeight || 190, 160), window.innerHeight - gutter - bottomSafe);
+    const availableTop = rect.top - gutter;
+    const availableBottom = window.innerHeight - rect.bottom - bottomSafe;
+    const availableLeft = rect.left - gutter;
+    const availableRight = window.innerWidth - rect.right - gutter;
+    let effectivePlacement = placement;
+
+    if (placement === 'bottom' && availableBottom < height && availableTop > availableBottom) {
+      effectivePlacement = 'top';
+    } else if (placement === 'top' && availableTop < height && availableBottom > availableTop) {
+      effectivePlacement = 'bottom';
+    } else if (placement === 'left' && availableLeft < width && availableRight > availableLeft) {
+      effectivePlacement = 'right';
+    } else if (placement === 'right' && availableRight < width && availableLeft > availableRight) {
+      effectivePlacement = 'left';
+    }
+
+    let top = rect.bottom + gutter;
+    let left = rect.left + rect.width / 2 - width / 2;
+
+    switch (effectivePlacement) {
+      case 'top':
+        top = rect.top - height - gutter;
+        left = rect.left + rect.width / 2 - width / 2;
+        break;
+      case 'left':
+        top = rect.top + rect.height / 2 - height / 2;
+        left = rect.left - width - gutter;
+        break;
+      case 'right':
+        top = rect.top + rect.height / 2 - height / 2;
+        left = rect.right + gutter;
+        break;
+      case 'bottom':
+      default:
+        top = rect.bottom + gutter;
+        left = rect.left + rect.width / 2 - width / 2;
+        break;
+    }
+
+    top = Math.max(gutter, Math.min(top, window.innerHeight - height - bottomSafe));
+    left = Math.max(gutter, Math.min(left, window.innerWidth - width - gutter));
+    return { top, left, width, placement: effectivePlacement };
+  };
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const media = window.matchMedia('(max-width: 768px)');
+    const handleChange = (event?: MediaQueryListEvent) => setIsMobile(event?.matches ?? media.matches);
+    handleChange();
+    if (typeof media.addEventListener === 'function') {
+      media.addEventListener('change', handleChange);
+      return () => media.removeEventListener('change', handleChange);
+    }
+    const legacyMedia = media as MediaQueryList & {
+      addListener?: (listener: (event: MediaQueryListEvent) => void) => void;
+      removeListener?: (listener: (event: MediaQueryListEvent) => void) => void;
+    };
+    if (typeof legacyMedia.addListener === 'function') {
+      legacyMedia.addListener(handleChange);
+      return () => legacyMedia.removeListener?.(handleChange);
+    }
+    return undefined;
+  }, []);
+
+  useEffect(() => {
+    if (!showOnboarding) {
+      setOnboardingTargetRect(null);
+      return;
+    }
+    if (totalOnboardingSteps === 0) {
+      setOnboardingTargetRect(null);
+      return;
+    }
+    if (onboardingStep >= totalOnboardingSteps) {
+      setOnboardingStep(Math.max(0, totalOnboardingSteps - 1));
+      return;
+    }
+    const updateTargetRect = () => {
+      if (!currentOnboarding) {
+        setOnboardingTargetRect(null);
+        return;
+      }
+      const target = currentOnboarding.getTarget();
+      if (!target) {
+        setOnboardingTargetRect(null);
+        return;
+      }
+      const rect = target.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) {
+        setOnboardingTargetRect(null);
+        return;
+      }
+      setOnboardingTargetRect(rect);
+    };
+    updateTargetRect();
+    const intervalId = window.setInterval(updateTargetRect, 200);
+    window.addEventListener('resize', updateTargetRect);
+    window.addEventListener('scroll', updateTargetRect, true);
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('resize', updateTargetRect);
+      window.removeEventListener('scroll', updateTargetRect, true);
+    };
+  }, [showOnboarding, onboardingStep, totalOnboardingSteps, currentOnboarding, activeTab, showChat, showTaskModal, showSettingsModal]);
+
+  useLayoutEffect(() => {
+    if (!showOnboarding) {
+      if (onboardingTooltipHeight !== 0) setOnboardingTooltipHeight(0);
+      return;
+    }
+    const isDocked = isMobile && currentOnboarding && (
+      currentOnboarding.id === 'add-task' || currentOnboarding.id === 'create-task' || currentOnboarding.id === 'split-task'
+    );
+    if (isDocked) {
+      if (onboardingTooltipHeight !== 0) setOnboardingTooltipHeight(0);
+      return;
+    }
+    const el = onboardingTooltipRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    if (Math.abs(rect.height - onboardingTooltipHeight) > 1) {
+      setOnboardingTooltipHeight(rect.height);
+    }
+  }, [showOnboarding, onboardingStep, currentOnboarding, tasks.length, onboardingTooltipHeight, isMobile]);
 
   useEffect(() => {
     if (activeTab !== 'settings') {
       lastContentTabRef.current = activeTab;
     }
   }, [activeTab]);
+
+  useEffect(() => {
+    latestStateRef.current = {
+      tasks,
+      trash,
+      messages,
+      globalInstruction,
+      modelId,
+      collapsedTaskIds
+    };
+  }, [tasks, trash, messages, globalInstruction, modelId, collapsedTaskIds]);
 
   // Check for available backup when user logs in or tasks change
   useEffect(() => {
@@ -110,6 +412,8 @@ const App = () => {
         setMessages([initialCoachMessage()]);
         setGlobalInstruction('');
         setModelId(defaultModel);
+        setShowOnboarding(false);
+        setOnboardingStep(0);
         return;
       }
       try {
@@ -140,12 +444,10 @@ const App = () => {
           setTrash(localBackup.trash || []);
           // Save backup to server immediately
           setTimeout(() => {
-            saveState(user.id, {
+            enqueueSave({
               tasks: localBackup.tasks,
-              trash: localBackup.trash || [],
-              chat: messages,
-              config: { globalInstruction, modelId }
-            }).catch((err) => console.error('Failed to restore backup to server', err));
+              trash: localBackup.trash || []
+            });
           }, 1000);
         } else {
           // Normal case: use server data
@@ -198,18 +500,116 @@ const App = () => {
     };
   }, [user]);
 
+  const buildSavePayload = (overrides: Partial<SavePayload> = {}): SavePayload => {
+    const base = latestStateRef.current;
+    const configOverride: Partial<SavePayload['config']> = overrides.config ?? {};
+    return {
+      tasks: overrides.tasks ?? base.tasks,
+      trash: overrides.trash ?? base.trash,
+      chat: overrides.chat ?? base.messages,
+      config: {
+        globalInstruction: configOverride.globalInstruction ?? base.globalInstruction,
+        modelId: configOverride.modelId ?? base.modelId,
+        collapsedTaskIds: configOverride.collapsedTaskIds ?? Array.from(base.collapsedTaskIds)
+      }
+    };
+  };
+
+  const flushSaveQueue = async (userId: string) => {
+    if (saveInFlightRef.current || !pendingSaveRef.current) return;
+    const nextSave = pendingSaveRef.current;
+    pendingSaveRef.current = null;
+    saveInFlightRef.current = true;
+    try {
+      await saveState(userId, nextSave.payload);
+      if (lastUserActionRef.current === nextSave.saveToken) {
+        lastSuccessfulSaveRef.current = nextSave.saveToken;
+      }
+    } catch (err) {
+      console.error('Failed to save state', err);
+    } finally {
+      saveInFlightRef.current = false;
+      if (pendingSaveRef.current) {
+        void flushSaveQueue(userId);
+      }
+    }
+  };
+
+  const enqueueSave = (overrides: Partial<SavePayload> = {}, saveToken = lastUserActionRef.current) => {
+    if (!user) return;
+    pendingSaveRef.current = { payload: buildSavePayload(overrides), saveToken };
+    void flushSaveQueue(user.id);
+  };
+
   useEffect(() => {
     if (!user || !hydrated) return;
+    const saveToken = lastUserActionRef.current;
     const timer = setTimeout(() => {
-      saveState(user.id, {
+      enqueueSave({
         tasks,
         trash,
         chat: messages,
-        config: { globalInstruction, modelId, collapsedTaskIds: Array.from(collapsedTaskIds) },
-      }).catch((err) => console.error('Failed to save state', err));
+        config: { globalInstruction, modelId, collapsedTaskIds: Array.from(collapsedTaskIds) }
+      }, saveToken);
     }, 300);
     return () => clearTimeout(timer);
   }, [user, hydrated, tasks, trash, messages, globalInstruction, modelId, collapsedTaskIds]);
+
+  useEffect(() => {
+    if (!user || !hydrated) return;
+    try {
+      const key = `yanplanner_onboarding_${user.id}`;
+      const seen = localStorage.getItem(key);
+      if (!seen) {
+        setOnboardingStep(0);
+        setLastCreatedTaskId(null);
+        setShowTaskModal(false);
+        setShowOnboarding(true);
+      }
+    } catch (err) {
+      console.error('Failed to load onboarding state', err);
+    }
+  }, [user, hydrated]);
+
+  useEffect(() => {
+    if (!showOnboarding || !currentOnboarding) return;
+    if (currentOnboarding.id === 'create-task') {
+      if (tasks.length === 0 && !showTaskModal) {
+        setShowTaskModal(true);
+      }
+      return;
+    }
+    if (showTaskModal) {
+      setShowTaskModal(false);
+    }
+    if (currentOnboarding.id === 'split-task' && activeTab !== 'tree') {
+      setActiveTab('tree');
+    }
+  }, [showOnboarding, currentOnboarding, tasks.length, showTaskModal, activeTab]);
+
+  useEffect(() => {
+    if (!showOnboarding || currentOnboarding?.id !== 'split-task') return;
+    if (tasks.length > 0) return;
+    const sampleTask = createSampleTask();
+    lastUserActionRef.current = Date.now();
+    setTasks((prev) => addChild(prev, null, sampleTask));
+    setLastCreatedTaskId(sampleTask.id);
+  }, [showOnboarding, currentOnboarding, tasks.length]);
+
+  const onboardingSplitTaskId = useMemo(() => {
+    if (lastCreatedTaskId && findTask(tasks, lastCreatedTaskId)) return lastCreatedTaskId;
+    return tasks[0]?.id ?? null;
+  }, [lastCreatedTaskId, tasks]);
+
+  useEffect(() => {
+    if (!showOnboarding || currentOnboarding?.id !== 'split-task') return;
+    if (!onboardingSplitTaskId) return;
+    if (planningIds.has(onboardingSplitTaskId)) return;
+    const target = findTask(tasks, onboardingSplitTaskId);
+    const hasAiChildren = (target?.children || []).some((child) => child.createdBy === 'ai');
+    if (!hasAiChildren) return;
+    setOnboardingStep((step) => Math.min(step + 1, totalOnboardingSteps - 1));
+  }, [showOnboarding, currentOnboarding, onboardingSplitTaskId, planningIds, tasks, totalOnboardingSteps]);
 
   // Remove auto-select effect
 
@@ -278,28 +678,31 @@ const App = () => {
         if (startedAt < lastUserActionRef.current) {
           return;
         }
+        const hasPendingLocalChanges = lastUserActionRef.current > lastSuccessfulSaveRef.current;
         // Only update tasks if they actually changed
-        setTasks((prev) => {
-          const newTasks = state.tasks || [];
-          if (JSON.stringify(prev) === JSON.stringify(newTasks)) return prev;
-          // CRITICAL SAFEGUARD: Never replace existing data with empty data
-          if (prev.length > 0 && newTasks.length === 0 && !state._explicitlyEmpty) {
-            console.warn('[POLLING SAFEGUARD] Refusing to replace', prev.length, 'tasks with empty array');
-            return prev;
-          }
-          console.log('[POLLING] Updating tasks array, isEditingTask:', isEditingTask);
-          return newTasks;
-        });
-        setTrash((prev) => {
-          const newTrash = state.trash || [];
-          if (JSON.stringify(prev) === JSON.stringify(newTrash)) return prev;
-          // CRITICAL SAFEGUARD: Never replace trash with empty data unless intentional
-          if (prev.length > 0 && newTrash.length === 0 && !state._explicitlyEmpty) {
-            console.warn('[POLLING SAFEGUARD] Refusing to replace', prev.length, 'trash items with empty array');
-            return prev;
-          }
-          return newTrash;
-        });
+        if (!hasPendingLocalChanges) {
+          setTasks((prev) => {
+            const newTasks = state.tasks || [];
+            if (JSON.stringify(prev) === JSON.stringify(newTasks)) return prev;
+            // CRITICAL SAFEGUARD: Never replace existing data with empty data
+            if (prev.length > 0 && newTasks.length === 0 && !state._explicitlyEmpty) {
+              console.warn('[POLLING SAFEGUARD] Refusing to replace', prev.length, 'tasks with empty array');
+              return prev;
+            }
+            console.log('[POLLING] Updating tasks array, isEditingTask:', isEditingTask);
+            return newTasks;
+          });
+          setTrash((prev) => {
+            const newTrash = state.trash || [];
+            if (JSON.stringify(prev) === JSON.stringify(newTrash)) return prev;
+            // CRITICAL SAFEGUARD: Never replace trash with empty data unless intentional
+            if (prev.length > 0 && newTrash.length === 0 && !state._explicitlyEmpty) {
+              console.warn('[POLLING SAFEGUARD] Refusing to replace', prev.length, 'trash items with empty array');
+              return prev;
+            }
+            return newTrash;
+          });
+        }
         const chat = state.chat || [];
         // Avoid overwriting with shorter/empty chat if the server didn't persist yet
         setMessages((prev) => {
@@ -366,6 +769,9 @@ const App = () => {
     setTrash([]);
     setBalanceCents(0);
     setAuthNotice('');
+    setShowOnboarding(false);
+    setOnboardingStep(0);
+    setLastCreatedTaskId(null);
   };
 
   // Auto-log-out any unverified session restored from storage
@@ -383,9 +789,16 @@ const App = () => {
       const tag = (e.target as HTMLElement)?.tagName;
 
       if (e.key === 'Escape' || e.key === 'Esc' || e.key === 'esc') {
+        if (showOnboarding) {
+          e.preventDefault();
+          completeOnboarding();
+          return;
+        }
         if (showTaskModal || showInstructionModal || showSettingsModal) {
           e.preventDefault();
-          setShowTaskModal(false);
+          if (showTaskModal) {
+            closeTaskModal();
+          }
           setShowInstructionModal(false);
           setShowSettingsModal(false);
         }
@@ -397,6 +810,10 @@ const App = () => {
       switch (e.key.toLowerCase()) {
         case 'n':
           e.preventDefault();
+          if (showOnboarding && currentOnboarding?.id === 'add-task') {
+            advanceOnboarding();
+            break;
+          }
           setShowTaskModal(true);
           break;
         case 'g':
@@ -425,7 +842,7 @@ const App = () => {
       window.removeEventListener('keydown', handler);
       window.removeEventListener('closeChatMobile', handleCloseChatMobile);
     };
-  }, [showTaskModal, showInstructionModal, showSettingsModal, activeTab]);
+  }, [showTaskModal, showInstructionModal, showSettingsModal, activeTab, showOnboarding, currentOnboarding, user]);
 
   const stats = useMemo(() => {
     const all: TaskNode[] = [];
@@ -441,11 +858,22 @@ const App = () => {
       hasContext: all.some((t) => t.attachments.length > 0 || t.description)
     };
   }, [tasks]);
-
   const handleAddTask = (task: TaskNode) => {
     lastUserActionRef.current = Date.now();
     setTasks((prev) => addChild(prev, task.parentId ?? null, task));
+    setLastCreatedTaskId(task.id);
     setShowTaskModal(false);
+    if (showOnboarding && currentOnboarding?.id === 'create-task' && !task.parentId) {
+      setActiveTab('tree');
+      setOnboardingStep((step) => Math.min(step + 1, totalOnboardingSteps - 1));
+    }
+  };
+
+  const closeTaskModal = () => {
+    setShowTaskModal(false);
+    if (showOnboarding && currentOnboarding?.id === 'create-task') {
+      setOnboardingStep(0);
+    }
   };
 
   const deleteR2Files = async (keys: string[]) => {
@@ -511,6 +939,30 @@ const App = () => {
     );
   };
 
+  const handleClearAiSubtasks = (parentId: string) => {
+    const parent = findTask(tasks, parentId);
+    if (!parent) return;
+    const aiChildren = (parent.children || []).filter((child) => child.createdBy === 'ai');
+    if (aiChildren.length === 0) return;
+    lastUserActionRef.current = Date.now();
+    const deletedAt = new Date().toISOString();
+    const trashedCopies = aiChildren.map((child) => {
+      const copy = typeof structuredClone === 'function' ? structuredClone(child) : (JSON.parse(JSON.stringify(child)) as TaskNode);
+      return {
+        ...copy,
+        deletedAt,
+        trashedFromParentId: parentId
+      };
+    });
+    setTasks((prev) =>
+      updateTask(prev, parentId, (t) => ({
+        ...t,
+        children: (t.children || []).filter((child) => child.createdBy !== 'ai')
+      }))
+    );
+    setTrash((prev) => [...trashedCopies, ...prev]);
+  };
+
   const handleSplit = async (id: string) => {
     const task = findTask(tasks, id);
     if (!task) return;
@@ -539,6 +991,7 @@ const App = () => {
     try {
       const ancestors = getAncestors(tasks, id);
       const subtasks = await generateSubtasks({ task, ancestors, conversation: messages, globalInstruction, modelId, userId: user.id });
+      lastUserActionRef.current = Date.now();
       setTasks((prev) =>
         updateTask(prev, id, (t) => ({
           ...t,
@@ -573,12 +1026,11 @@ const App = () => {
       const aiMessage = await chatWithPlanner(text, tasks, globalInstruction, null, modelId, user.id);
       setMessages((prev) => [...prev, aiMessage]);
       // Persist chat immediately to reduce chance of losing the last response
-      saveState(user.id, {
-        tasks,
-        trash,
-        chat: [...messages, userMsg, aiMessage],
-        config: { globalInstruction, modelId }
-      }).catch((err) => console.error('Failed to persist chat', err));
+      const baseMessages = latestStateRef.current.messages;
+      const chatLog = baseMessages.some((msg) => msg.id === userMsg.id)
+        ? [...baseMessages, aiMessage]
+        : [...baseMessages, userMsg, aiMessage];
+      enqueueSave({ chat: chatLog });
     } catch (err) {
       console.error('Chat failed', err);
       const errorMsg: ChatMessage = {
@@ -593,21 +1045,12 @@ const App = () => {
     }
   };
 
-  const handleClearChat = async () => {
+  const handleClearChat = () => {
     if (!user) return;
     const clearedMessages = [initialCoachMessage()];
     setMessages(clearedMessages);
     // Immediately save to server to prevent polling from restoring old messages
-    try {
-      await saveState(user.id, {
-        tasks,
-        trash,
-        chat: clearedMessages,
-        config: { globalInstruction, modelId }
-      });
-    } catch (err) {
-      console.error('Failed to save cleared chat', err);
-    }
+    enqueueSave({ chat: clearedMessages });
   };
 
   const renderSettingsContent = (onDone: () => void) => {
@@ -659,12 +1102,7 @@ const App = () => {
                   lastUserActionRef.current = Date.now();
                   setTasks(restored.tasks);
                   setTrash(restored.trash);
-                  await saveState(user.id, {
-                    tasks: restored.tasks,
-                    trash: restored.trash,
-                    chat: messages,
-                    config: { globalInstruction, modelId }
-                  });
+                  enqueueSave({ tasks: restored.tasks, trash: restored.trash });
                   clearBackup(user.id);
                   setBackupAvailable(null);
                   closeSettings();
@@ -677,6 +1115,16 @@ const App = () => {
               Restore backup
             </button>
           </div>
+          {isMobile && (
+            <div className="settings-footer">
+              <p className="muted" style={{ fontSize: 12, margin: '4px 0' }}>
+                © {new Date().getFullYear()} YanPlanner. All rights reserved. {serverVersion && `v${serverVersion}`}
+              </p>
+              <p className="muted" style={{ fontSize: 12, margin: '4px 0' }}>
+                For bugs, feature requests, or support: <a href="mailto:ethanxucoder@gmail.com" style={{ color: '#1976d2' }}>ethanxucoder@gmail.com</a>
+              </p>
+            </div>
+          )}
         </>
       );
     }
@@ -724,6 +1172,22 @@ const App = () => {
             {modelTiers.find((t) => t.id === modelId)?.note}
           </p>
         </div>
+
+        <div style={{ marginBottom: 'var(--space-xl)' }}>
+          <p style={{ fontWeight: 600, marginBottom: 'var(--space-sm)' }}>Onboarding</p>
+          <p className="muted" style={{ marginBottom: 'var(--space-sm)' }}>
+            Replay the guided walkthrough of YanPlanner features.
+          </p>
+          <button
+            className="secondary"
+            onClick={() => {
+              startOnboarding();
+              setShowSettingsModal(false);
+            }}
+          >
+            ✨ Replay onboarding
+          </button>
+        </div>
         
         {backupAvailable && backupAvailable.taskCount > 0 && (
           <div style={{ marginBottom: 'var(--space-xl)' }}>
@@ -741,12 +1205,7 @@ const App = () => {
                     lastUserActionRef.current = Date.now();
                     setTasks(restored.tasks);
                     setTrash(restored.trash);
-                    await saveState(user.id, {
-                      tasks: restored.tasks,
-                      trash: restored.trash,
-                      chat: messages,
-                      config: { globalInstruction, modelId }
-                    });
+                    enqueueSave({ tasks: restored.tasks, trash: restored.trash });
                     clearBackup(user.id);
                     setBackupAvailable(null);
                     closeSettings();
@@ -765,12 +1224,25 @@ const App = () => {
             )}
           </div>
         )}
-        
-        <div className="task-actions">
-          <button className="primary" onClick={closeSettings}>
-            Done
-          </button>
-        </div>
+
+        {isMobile && (
+          <div className="settings-footer">
+            <p className="muted" style={{ fontSize: 12, margin: '4px 0' }}>
+              © {new Date().getFullYear()} YanPlanner. All rights reserved. {serverVersion && `v${serverVersion}`}
+            </p>
+            <p className="muted" style={{ fontSize: 12, margin: '4px 0' }}>
+              For bugs, feature requests, or support: <a href="mailto:ethanxucoder@gmail.com" style={{ color: '#1976d2' }}>ethanxucoder@gmail.com</a>
+            </p>
+          </div>
+        )}
+
+        {!isMobile && (
+          <div className="task-actions">
+            <button className="primary" onClick={closeSettings}>
+              Done
+            </button>
+          </div>
+        )}
       </>
     );
   };
@@ -778,6 +1250,113 @@ const App = () => {
   if (!user) {
     return <AuthForm onLogin={handleAuthLogin} onRegister={handleAuthRegister} notice={authNotice} onClearNotice={() => setAuthNotice('')} />;
   }
+  if (!hydrated) {
+    return (
+      <div className="loading-screen">
+        <div className="loading-card">
+          <div className="loading-spinner" aria-hidden="true" />
+          <p className="title">Loading your planner</p>
+          <p className="muted">Fetching tasks...</p>
+        </div>
+      </div>
+    );
+  }
+
+  const onboardingStepNumber = totalOnboardingSteps
+    ? Math.min(onboardingStep + 1, totalOnboardingSteps)
+    : 0;
+  const safeOnboardingIndex = totalOnboardingSteps
+    ? Math.min(onboardingStep, totalOnboardingSteps - 1)
+    : 0;
+  const onboardingIsSplitStep = showOnboarding && currentOnboarding?.id === 'split-task';
+  const desiredTooltipPlacement = currentOnboarding?.placement ?? 'bottom';
+  const highlightPadding = currentOnboarding?.highlightPadding ?? 8;
+  const spotlightStyle = onboardingTargetRect
+    ? {
+        top: Math.max(0, onboardingTargetRect.top - highlightPadding),
+        left: Math.max(0, onboardingTargetRect.left - highlightPadding),
+        width: onboardingTargetRect.width + highlightPadding * 2,
+        height: onboardingTargetRect.height + highlightPadding * 2
+      }
+    : undefined;
+  const tooltipPosition = showOnboarding && currentOnboarding && onboardingTargetRect && typeof window !== 'undefined'
+    ? getTooltipPosition(onboardingTargetRect, desiredTooltipPlacement, onboardingTooltipHeight)
+    : null;
+  const tooltipPlacement = tooltipPosition?.placement ?? (spotlightStyle ? desiredTooltipPlacement : 'center');
+  const tooltipMaxHeight = typeof window !== 'undefined'
+    ? window.innerHeight - (isMobile ? 140 : 24)
+    : undefined;
+  const tooltipStyle = tooltipPosition
+    ? { top: tooltipPosition.top, left: tooltipPosition.left, width: tooltipPosition.width, maxHeight: tooltipMaxHeight }
+    : { top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: 'min(320px, calc(100vw - 24px))', maxHeight: tooltipMaxHeight };
+  const showEmptyTasks = tasks.length === 0 && (activeTab === 'tree' || activeTab === 'list');
+  const useDockedOnboarding = showOnboarding && isMobile && currentOnboarding && (
+    currentOnboarding.id === 'add-task' || currentOnboarding.id === 'create-task' || currentOnboarding.id === 'split-task'
+  );
+  const dockPlacement: 'top' | 'bottom' = 'top';
+  const shouldPadModalForDock = useDockedOnboarding && currentOnboarding?.id === 'create-task';
+  const emptyTasksState = (
+    <div className="empty-state">
+      <div className="empty-icon" aria-hidden>📝</div>
+      <p className="title" style={{ fontSize: 22, margin: '8px 0 6px' }}>No tasks yet</p>
+      <p className="muted" style={{ maxWidth: 520 }}>
+        Add a task to start building your day-by-day plan. Include due dates to get the best splits.
+      </p>
+      <div className="empty-actions">
+        <button
+          className="primary"
+          onClick={() => {
+            if (showOnboarding && currentOnboarding?.id === 'add-task') {
+              advanceOnboarding();
+              return;
+            }
+            setShowTaskModal(true);
+          }}
+        >
+          Add task
+        </button>
+      </div>
+    </div>
+  );
+
+  const onboardingCardContent = (
+    <>
+      <div className="onboarding-header">
+        <span className="onboarding-step">
+          Step {onboardingStepNumber} of {totalOnboardingSteps}
+        </span>
+        <div className="onboarding-progress" aria-hidden="true">
+          {onboardingSteps.map((step, idx) => (
+            <span
+              key={`onboarding-dot-${step.id}`}
+              className={`onboarding-dot ${idx <= safeOnboardingIndex ? 'active' : ''}`}
+            />
+          ))}
+        </div>
+      </div>
+      <p className="onboarding-title">{currentOnboarding?.title}</p>
+      <p className="muted onboarding-text">{currentOnboarding?.description}</p>
+      <p className="onboarding-action">{currentOnboarding?.action}</p>
+      <div className="onboarding-actions">
+        <button className="secondary" onClick={completeOnboarding}>
+          Skip
+        </button>
+        <div className="onboarding-actions-right">
+          {safeOnboardingIndex > 0 && (
+            <button
+              className="secondary"
+              onClick={() => setOnboardingStep((step) => Math.max(0, step - 1))}
+            >
+              Back
+            </button>
+          )}
+          <button className="primary" onClick={advanceOnboarding}>
+            {safeOnboardingIndex >= totalOnboardingSteps - 1 ? 'Finish' : 'Continue'}
+          </button>
+        </div>
+      </div>
+    </>
+  );
 
   const mainPlanner = (
     <div className="app-shell">
@@ -833,9 +1412,6 @@ const App = () => {
                 <button className="secondary" onClick={() => { setShowTopUpModal(true); setShowAccountDropdown(false); }}>
                   💳 Add funds
                 </button>
-                <button className="secondary" onClick={() => { navigate('/admin'); setShowAccountDropdown(false); }} title="Admin dashboard">
-                  ⚙️ Admin
-                </button>
                 <button className="secondary" onClick={() => { handleLogout(); setShowAccountDropdown(false); }} title="Log out of this account">
                   🚪 Logout
                 </button>
@@ -854,21 +1430,27 @@ const App = () => {
             <nav className="view-selector">
               <button 
                 className={`view-tab ${activeTab === 'tree' ? 'active' : ''}`} 
-                onClick={() => setActiveTab('tree')}
+                onClick={() => {
+                  setActiveTab('tree');
+                }}
               >
                 <span className="view-icon">🌲</span>
                 <span className="view-label">Tree</span>
               </button>
               <button 
                 className={`view-tab ${activeTab === 'list' ? 'active' : ''}`} 
-                onClick={() => setActiveTab('list')}
+                onClick={() => {
+                  setActiveTab('list');
+                }}
               >
                 <span className="view-icon">📋</span>
                 <span className="view-label">List</span>
               </button>
               <button 
                 className={`view-tab ${activeTab === 'trash' ? 'active' : ''}`} 
-                onClick={() => setActiveTab('trash')}
+                onClick={() => {
+                  setActiveTab('trash');
+                }}
               >
                 <span className="view-icon">🗑️</span>
                 <span className="view-label">Trash</span>
@@ -879,13 +1461,26 @@ const App = () => {
           {/* Action buttons */}
           <div className="sidebar-section">
             <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
-              <button className="primary sidebar-add-button" onClick={() => setShowTaskModal(true)} style={{ flex: 1 }}>
+              <button
+                className="primary sidebar-add-button"
+                ref={addTaskButtonRef}
+                onClick={() => {
+                  if (showOnboarding && currentOnboarding?.id === 'add-task') {
+                    advanceOnboarding();
+                    return;
+                  }
+                  setShowTaskModal(true);
+                }}
+                style={{ flex: 1 }}
+              >
                 <span style={{ fontSize: '16px', marginRight: '6px' }}>+</span>
                 Add task
               </button>
               <button 
                 className={`secondary sidebar-icon-button ${showChat ? 'active-chat' : ''}`}
-                onClick={() => setShowChat((v) => !v)}
+                onClick={() => {
+                  setShowChat((v) => !v);
+                }}
                 title={showChat ? 'Hide coach' : 'Show coach'}
               >
                 💬
@@ -915,7 +1510,11 @@ const App = () => {
             </select>
             <button 
               className="secondary" 
-              onClick={() => { setSettingsView('main'); setShowSettingsModal(true); }}
+              ref={settingsButtonRef}
+              onClick={() => {
+                setSettingsView('main');
+                setShowSettingsModal(true);
+              }}
               style={{ width: '100%', justifyContent: 'center' }}
             >
               ⚙️ Settings
@@ -928,51 +1527,62 @@ const App = () => {
           {/* Scrollable content area */}
           <div className="panel-content">
         {activeTab === 'tree' ? (
-          <TaskTree
-            tasks={tasks}
-            onSplit={handleSplit}
-            onAddSubtask={handleAddTask}
-            onReorder={(newTasks) => {
-              lastUserActionRef.current = Date.now();
-              setTasks(newTasks);
-            }}
-            onDelete={(id) => {
-              const ok = window.confirm('Move this task and its subtasks to trash? Attachments stay until permanently deleted.');
-              if (!ok) return;
-              softDeleteTask(id);
-            }}
-            onUpdate={handleUpdateTask}
-            planningIds={planningIds}
-            onEditModeChange={setIsEditingTask}
-            collapsedIds={collapsedTaskIds}
-            onToggleCollapsed={(id) => {
-              lastUserActionRef.current = Date.now();
-              setCollapsedTaskIds((prev) => {
-                const next = new Set(prev);
-                if (next.has(id)) {
-                  next.delete(id);
-                } else {
-                  next.add(id);
-                }
-                return next;
-              });
-            }}
-            userId={user?.id}
-            balanceCents={balanceCents}
-          />
+          showEmptyTasks ? (
+            emptyTasksState
+          ) : (
+            <TaskTree
+              tasks={tasks}
+              onSplit={handleSplit}
+              onAddSubtask={handleAddTask}
+              onReorder={(newTasks) => {
+                lastUserActionRef.current = Date.now();
+                setTasks(newTasks);
+              }}
+              onDelete={(id) => {
+                const ok = window.confirm('Move this task and its subtasks to trash? Attachments stay until permanently deleted.');
+                if (!ok) return;
+                softDeleteTask(id);
+              }}
+              onUpdate={handleUpdateTask}
+              planningIds={planningIds}
+              onEditModeChange={setIsEditingTask}
+              collapsedIds={collapsedTaskIds}
+              onToggleCollapsed={(id) => {
+                lastUserActionRef.current = Date.now();
+                setCollapsedTaskIds((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(id)) {
+                    next.delete(id);
+                  } else {
+                    next.add(id);
+                  }
+                  return next;
+                });
+              }}
+              userId={user?.id}
+              balanceCents={balanceCents}
+              onboardingSplitTaskId={showOnboarding ? onboardingSplitTaskId : null}
+              onboardingShowSplit={onboardingIsSplitStep}
+              onClearAiSubtasks={handleClearAiSubtasks}
+            />
+          )
         ) : activeTab === 'list' ? (
-          <SimpleListView
-            tasks={tasks}
-            onSplit={handleSplit}
-            onDelete={(id) => {
-              const ok = window.confirm('Move this task and its subtasks to trash? Attachments stay until permanently deleted.');
-              if (!ok) return;
-              softDeleteTask(id);
-            }}
-            onUpdate={handleUpdateTask}
-            planningIds={planningIds}
-            onEditModeChange={setIsEditingTask}
-          />
+          showEmptyTasks ? (
+            emptyTasksState
+          ) : (
+            <SimpleListView
+              tasks={tasks}
+              onSplit={handleSplit}
+              onDelete={(id) => {
+                const ok = window.confirm('Move this task and its subtasks to trash? Attachments stay until permanently deleted.');
+                if (!ok) return;
+                softDeleteTask(id);
+              }}
+              onUpdate={handleUpdateTask}
+              planningIds={planningIds}
+              onEditModeChange={setIsEditingTask}
+            />
+          )
         ) : activeTab === 'trash' ? (
           <TrashCan
             items={trash}
@@ -1011,27 +1621,34 @@ const App = () => {
       <div className="mobile-view-selector">
         <button 
           className={`view-tab ${activeTab === 'tree' ? 'active' : ''}`} 
-          onClick={() => setActiveTab('tree')}
+          onClick={() => {
+            setActiveTab('tree');
+          }}
         >
           <span className="view-icon">🌲</span>
           <span className="view-label">Tree</span>
         </button>
         <button 
           className={`view-tab ${activeTab === 'list' ? 'active' : ''}`} 
-          onClick={() => setActiveTab('list')}
+          onClick={() => {
+            setActiveTab('list');
+          }}
         >
           <span className="view-icon">📋</span>
           <span className="view-label">List</span>
         </button>
         <button 
           className={`view-tab ${activeTab === 'trash' ? 'active' : ''}`} 
-          onClick={() => setActiveTab('trash')}
+          onClick={() => {
+            setActiveTab('trash');
+          }}
         >
           <span className="view-icon">🗑️</span>
           <span className="view-label">Trash</span>
         </button>
         <button 
           className={`view-tab ${activeTab === 'settings' ? 'active' : ''}`} 
+          ref={mobileSettingsTabRef}
           onClick={() => {
             setSettingsView('main');
             setActiveTab('settings');
@@ -1045,7 +1662,14 @@ const App = () => {
       {!showTaskModal && (
         <button
           className="mobile-fab"
-          onClick={() => setShowTaskModal(true)}
+          ref={mobileFabRef}
+          onClick={() => {
+            if (showOnboarding && currentOnboarding?.id === 'add-task') {
+              advanceOnboarding();
+              return;
+            }
+            setShowTaskModal(true);
+          }}
           aria-label="Add task"
         >
           +
@@ -1074,11 +1698,11 @@ const App = () => {
         </div>
       </div>
       {showTaskModal && (
-        <div className="modal-backdrop" onClick={() => setShowTaskModal(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className={`modal-backdrop ${shouldPadModalForDock ? 'onboarding-docked' : ''}`} onClick={closeTaskModal}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} data-onboarding="task-modal">
             <p className="task-title">Add a new task</p>
             <p className="muted">Include due date and uploads. The AI will use them to split accurately.</p>
-            <TaskForm userId={user?.id} balanceCents={balanceCents} onSubmit={handleAddTask} onCancel={() => setShowTaskModal(false)} />
+            <TaskForm userId={user?.id} balanceCents={balanceCents} onSubmit={handleAddTask} onCancel={closeTaskModal} />
           </div>
         </div>
       )}
@@ -1155,6 +1779,36 @@ const App = () => {
             </p>
           </div>
         </div>
+      )}
+      {showOnboarding && currentOnboarding && (
+        <>
+          <div className="onboarding-overlay" aria-hidden="true">
+            {spotlightStyle && (
+              <div className="onboarding-spotlight" style={spotlightStyle} />
+            )}
+          </div>
+          {useDockedOnboarding ? (
+            <div
+              className={`onboarding-dock ${dockPlacement === 'top' ? 'dock-top' : 'dock-bottom'}`}
+              role="dialog"
+              aria-live="polite"
+            >
+              {onboardingCardContent}
+            </div>
+          ) : (
+            <div
+              className="onboarding-tooltip"
+              ref={onboardingTooltipRef}
+              role="dialog"
+              aria-live="polite"
+              data-placement={tooltipPlacement}
+              style={tooltipStyle}
+            >
+              <span className="onboarding-arrow" aria-hidden="true" />
+              {onboardingCardContent}
+            </div>
+          )}
+        </>
       )}
     </div>
   );

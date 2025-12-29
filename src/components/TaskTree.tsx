@@ -18,6 +18,35 @@ type Props = {
   onToggleCollapsed?: (id: string) => void;
   userId?: string;
   balanceCents?: number;
+  onboardingSplitTaskId?: string | null;
+  onboardingShowSplit?: boolean;
+  onClearAiSubtasks?: (parentId: string) => void;
+};
+
+const copyTextToClipboard = async (text: string) => {
+  if (!text) return;
+  try {
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+  } catch (err) {
+    console.warn('Clipboard API failed, falling back to execCommand.', err);
+  }
+  if (typeof document === 'undefined') return;
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', 'true');
+  textarea.style.position = 'fixed';
+  textarea.style.top = '-1000px';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+  textarea.select();
+  try {
+    document.execCommand('copy');
+  } finally {
+    document.body.removeChild(textarea);
+  }
 };
 
 const TaskTree = ({
@@ -32,7 +61,10 @@ const TaskTree = ({
   collapsedIds = new Set(),
   onToggleCollapsed,
   userId,
-  balanceCents
+  balanceCents,
+  onboardingSplitTaskId,
+  onboardingShowSplit,
+  onClearAiSubtasks
 }: Props) => {
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
   const [dragOverTaskId, setDragOverTaskId] = useState<string | null>(null);
@@ -58,6 +90,9 @@ const TaskTree = ({
           onToggleCollapsed={onToggleCollapsed}
           userId={userId}
           balanceCents={balanceCents}
+          onboardingSplitTaskId={onboardingSplitTaskId}
+          onboardingShowSplit={onboardingShowSplit}
+          onClearAiSubtasks={onClearAiSubtasks}
           draggedTaskId={draggedTaskId}
           setDraggedTaskId={setDraggedTaskId}
           dragOverTaskId={dragOverTaskId}
@@ -102,7 +137,10 @@ const TaskNodeView = ({
   setDraggedTaskId,
   dragOverTaskId,
   setDragOverTaskId,
-  allTasks
+  allTasks,
+  onboardingSplitTaskId,
+  onboardingShowSplit,
+  onClearAiSubtasks
 }: {
   task: TaskNode;
   depth: number;
@@ -124,11 +162,15 @@ const TaskNodeView = ({
   dragOverTaskId: string | null;
   setDragOverTaskId: (id: string | null) => void;
   allTasks: TaskNode[];
+  onboardingSplitTaskId?: string | null;
+  onboardingShowSplit?: boolean;
+  onClearAiSubtasks?: (parentId: string) => void;
 }) => {
   const [showSubForm, setShowSubForm] = useState(false);
   const [showMobileModal, setShowMobileModal] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [isMobile, setIsMobile] = useState(false);
+  const menuButtonRef = useRef<HTMLButtonElement | null>(null);
   const isStartAfterDue = task.startDate && task.dueDate && task.startDate >= task.dueDate;
   const canSplit = !isDueTodayOrPast(task.dueDate) && !isStartAfterDue;
   const [editing, setEditing] = useState(false);
@@ -143,6 +185,10 @@ const TaskNodeView = ({
   const isDragOver = dragOverTaskId === task.id;
   const hasChildren = (task.children ?? []).length > 0;
   const showMenuButton = !isMobile && !editing;
+  const isOnboardingSplitTarget = onboardingSplitTaskId === task.id;
+  const isSplitting = planningIds?.has(task.id);
+  const descriptionText = task.description?.trim() ?? '';
+  const hasDescription = descriptionText.length > 0;
 
   console.log('TaskNodeView render - task:', task.id, 'editing:', editing);
 
@@ -206,6 +252,25 @@ const TaskNodeView = ({
     }
   }, [contextMenu]);
 
+  useEffect(() => {
+    if (!isOnboardingSplitTarget) return;
+    if (!onboardingShowSplit) {
+      if (contextMenu) setContextMenu(null);
+      if (showMobileModal) setShowMobileModal(false);
+      return;
+    }
+    if (isMobile) {
+      if (!showMobileModal) setShowMobileModal(true);
+      return;
+    }
+    if (!contextMenu) {
+      const rect = menuButtonRef.current?.getBoundingClientRect();
+      if (rect) {
+        setContextMenu({ x: rect.left, y: rect.bottom + 6 });
+      }
+    }
+  }, [isOnboardingSplitTarget, onboardingShowSplit, isMobile, contextMenu, showMobileModal]);
+
   const handleMenuToggle = (e: MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
     if (editing) return;
@@ -215,6 +280,19 @@ const TaskNodeView = ({
     }
     const rect = e.currentTarget.getBoundingClientRect();
     setContextMenu({ x: rect.left, y: rect.bottom + 6 });
+  };
+
+  const handleCopyDescription = () => {
+    if (!hasDescription) return;
+    void copyTextToClipboard(descriptionText);
+  };
+
+  const handleClearAiChildren = () => {
+    if (onClearAiSubtasks) {
+      onClearAiSubtasks(task.id);
+      return;
+    }
+    onUpdate(task.id, { children: (task.children || []).filter((c) => c.createdBy !== 'ai') });
   };
 
   const handleDragStart = (e: React.DragEvent) => {
@@ -413,6 +491,12 @@ const TaskNodeView = ({
                     AI
                   </span>
                 )}
+                {isSplitting && (
+                  <span className="badge badge-splitting" title="AI is splitting this task">
+                    <span className="badge-splitting-spinner" aria-hidden="true" />
+                    Splitting…
+                  </span>
+                )}
               </div>
               {task.dueDate && (
                 <span className="muted task-due-date">
@@ -428,6 +512,7 @@ const TaskNodeView = ({
               <button
                 type="button"
                 className="secondary collapse-toggle menu-toggle"
+                ref={menuButtonRef}
                 style={{ 
                   padding: '4px 8px', 
                   minWidth: 0, 
@@ -568,7 +653,7 @@ const TaskNodeView = ({
               e.stopPropagation();
               const ok = window.confirm('Clear all AI-generated subtasks under this task?');
               if (!ok) return;
-              onUpdate(task.id, { children: (task.children || []).filter((c) => c.createdBy !== 'ai') });
+              handleClearAiChildren();
             }}
           >
             Clear AI subtasks
@@ -611,6 +696,9 @@ const TaskNodeView = ({
               dragOverTaskId={dragOverTaskId}
               setDragOverTaskId={setDragOverTaskId}
               allTasks={allTasks}
+              onboardingSplitTaskId={onboardingSplitTaskId}
+              onboardingShowSplit={onboardingShowSplit}
+              onClearAiSubtasks={onClearAiSubtasks}
             />
           ))}
         </div>
@@ -618,7 +706,7 @@ const TaskNodeView = ({
       
       {/* Mobile task detail modal */}
       {showMobileModal && isMobile && createPortal(
-        <div className="modal-backdrop" onClick={() => setShowMobileModal(false)}>
+        <div className={`modal-backdrop ${onboardingShowSplit ? 'onboarding-docked' : ''}`} onClick={() => setShowMobileModal(false)}>
           <div className="modal mobile-task-modal" onClick={(e) => e.stopPropagation()}>
             <div style={{ marginBottom: 12 }}>
               <p className="task-title" style={{ fontSize: 16, marginBottom: 8 }}>{task.title}</p>
@@ -656,8 +744,20 @@ const TaskNodeView = ({
                 }}
                 disabled={!canSplit || isDone || planningIds?.has(task.id)}
                 title={!canSplit ? 'Due today or overdue; adjust due date before splitting.' : undefined}
+                data-onboarding={isOnboardingSplitTarget && onboardingShowSplit ? 'split-task' : undefined}
               >
                 {planningIds?.has(task.id) ? 'Planning…' : 'AI split'}
+              </button>
+              <button
+                className="secondary"
+                onClick={() => {
+                  setShowMobileModal(false);
+                  handleCopyDescription();
+                }}
+                disabled={!hasDescription}
+                title={!hasDescription ? 'No description to copy.' : 'Copy description'}
+              >
+                Copy description
               </button>
               <button 
                 className="secondary" 
@@ -698,7 +798,7 @@ const TaskNodeView = ({
                 </button>
               )}
               <button 
-                className="subtle" 
+                className="secondary" 
                 onClick={() => {
                   setShowMobileModal(false);
                   onDelete(task.id);
@@ -714,7 +814,7 @@ const TaskNodeView = ({
                     const ok = window.confirm('Clear all AI-generated subtasks under this task?');
                     if (!ok) return;
                     setShowMobileModal(false);
-                    onUpdate(task.id, { children: (task.children || []).filter((c) => c.createdBy !== 'ai') });
+                    handleClearAiChildren();
                   }}
                 >
                   Clear AI subtasks
@@ -757,8 +857,20 @@ const TaskNodeView = ({
             }}
             disabled={!canSplit || isDone || planningIds?.has(task.id)}
             title={!canSplit ? 'Due today or overdue; adjust due date before splitting.' : undefined}
+            data-onboarding={isOnboardingSplitTarget && onboardingShowSplit ? 'split-task' : undefined}
           >
             {planningIds?.has(task.id) ? 'Planning…' : '🤖 AI split'}
+          </button>
+          <button
+            className="context-menu-item"
+            onClick={() => {
+              setContextMenu(null);
+              handleCopyDescription();
+            }}
+            disabled={!hasDescription}
+            title={!hasDescription ? 'No description to copy.' : 'Copy description'}
+          >
+            📋 Copy description
           </button>
           <button
             className="context-menu-item"
@@ -798,7 +910,7 @@ const TaskNodeView = ({
                 const ok = window.confirm('Clear all AI-generated subtasks under this task?');
                 if (!ok) return;
                 setContextMenu(null);
-                onUpdate(task.id, { children: (task.children || []).filter((c) => c.createdBy !== 'ai') });
+                handleClearAiChildren();
               }}
             >
               🧹 Clear AI subtasks
