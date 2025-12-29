@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { SyntheticEvent } from 'react';
+import type { CSSProperties, SyntheticEvent } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import TaskForm from './components/TaskForm';
 import TaskTree from './components/TaskTree';
@@ -74,6 +74,9 @@ const App = () => {
   const [user, setUser] = useState(() => currentUser());
   const [hydrated, setHydrated] = useState(false);
   const [balanceCents, setBalanceCents] = useState<number>(0);
+  const [balanceDisplayCents, setBalanceDisplayCents] = useState<number>(0);
+  const [balanceDeltaCents, setBalanceDeltaCents] = useState<number | null>(null);
+  const [balanceDeltaKey, setBalanceDeltaKey] = useState(0);
   const [showTopUpModal, setShowTopUpModal] = useState(false);
   const [topUpAmount, setTopUpAmount] = useState('10'); // default $10
   const [toppingUp, setToppingUp] = useState(false);
@@ -100,6 +103,11 @@ const App = () => {
   const pendingSaveRef = useRef<{ payload: SavePayload; saveToken: number } | null>(null);
   const splitRequestRef = useRef<Map<string, number>>(new Map());
   const lastContentTabRef = useRef<'tree' | 'list' | 'trash'>('tree');
+  const balanceCentsRef = useRef(0);
+  const balanceAnimRef = useRef<number | null>(null);
+  const balanceDeltaTimeoutRef = useRef<number | null>(null);
+  const balanceAnimatingRef = useRef(false);
+  const balanceStartTimeoutRef = useRef<number | null>(null);
   // Prevent spamming version-update logs and duplicate reload timers
   const pendingReloadRef = useRef(false);
   const addTaskButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -120,6 +128,58 @@ const App = () => {
     modelId,
     collapsedTaskIds
   });
+  const BALANCE_DELTA_PAUSE_MS = 3000;
+  const formatCurrency = (cents: number) => `$${(cents / 100).toFixed(2)}`;
+  const balanceDeltaStyle = { '--balance-delta-delay': `${BALANCE_DELTA_PAUSE_MS}ms` } as CSSProperties;
+  const clearBalanceDelta = () => {
+    if (balanceDeltaTimeoutRef.current) {
+      window.clearTimeout(balanceDeltaTimeoutRef.current);
+      balanceDeltaTimeoutRef.current = null;
+    }
+    if (balanceStartTimeoutRef.current) {
+      window.clearTimeout(balanceStartTimeoutRef.current);
+      balanceStartTimeoutRef.current = null;
+    }
+    setBalanceDeltaCents(null);
+  };
+  const animateBalanceDeduction = (fromCents: number, toCents: number) => {
+    if (fromCents <= toCents) {
+      balanceAnimatingRef.current = false;
+      setBalanceDisplayCents(toCents);
+      clearBalanceDelta();
+      return;
+    }
+    const delta = fromCents - toCents;
+    clearBalanceDelta();
+    setBalanceDeltaCents(delta);
+    setBalanceDeltaKey((key) => key + 1);
+    balanceAnimatingRef.current = true;
+    if (balanceAnimRef.current) {
+      cancelAnimationFrame(balanceAnimRef.current);
+    }
+    setBalanceDisplayCents(fromCents);
+    const duration = Math.min(1800, Math.max(700, delta * 12));
+    const startAnimation = () => {
+      const start = performance.now();
+      const step = (now: number) => {
+        const t = Math.min((now - start) / duration, 1);
+        const eased = 1 - Math.pow(1 - t, 3);
+        const current = Math.round(fromCents - delta * eased);
+        setBalanceDisplayCents(current);
+        if (t < 1) {
+          balanceAnimRef.current = requestAnimationFrame(step);
+        } else {
+          balanceAnimatingRef.current = false;
+          setBalanceDisplayCents(toCents);
+          balanceDeltaTimeoutRef.current = window.setTimeout(() => {
+            setBalanceDeltaCents(null);
+          }, 900);
+        }
+      };
+      balanceAnimRef.current = requestAnimationFrame(step);
+    };
+    balanceStartTimeoutRef.current = window.setTimeout(startAnimation, BALANCE_DELTA_PAUSE_MS);
+  };
   
   const resolveTarget = (el: HTMLElement | null) => {
     if (!el) return null;
@@ -499,6 +559,21 @@ const App = () => {
       cancelled = true;
     };
   }, [user]);
+
+  useEffect(() => {
+    balanceCentsRef.current = balanceCents;
+    if (!balanceAnimatingRef.current) {
+      setBalanceDisplayCents(balanceCents);
+    }
+  }, [balanceCents]);
+
+  useEffect(() => {
+    return () => {
+      if (balanceAnimRef.current) cancelAnimationFrame(balanceAnimRef.current);
+      if (balanceDeltaTimeoutRef.current) window.clearTimeout(balanceDeltaTimeoutRef.current);
+      if (balanceStartTimeoutRef.current) window.clearTimeout(balanceStartTimeoutRef.current);
+    };
+  }, []);
 
   const buildSavePayload = (overrides: Partial<SavePayload> = {}): SavePayload => {
     const base = latestStateRef.current;
@@ -983,6 +1058,7 @@ const App = () => {
       alert('Minimum balance of $0.50 required to use AI features. Please add funds to continue.');
       return;
     }
+    const balanceBeforeSplit = balanceCentsRef.current;
     if (isDueTodayOrPast(task.dueDate)) {
       setMessages((prev) => [
         ...prev,
@@ -1013,6 +1089,21 @@ const App = () => {
           children: [...(t.children || []), ...subtasks]
         }))
       );
+      if (splitRequestRef.current.get(id) === splitToken) {
+        try {
+          const updatedBalance = await fetchBalance(user.id);
+          if (splitRequestRef.current.get(id) !== splitToken) return;
+          setBalanceCents((prev) => (prev === updatedBalance ? prev : updatedBalance));
+          if (updatedBalance < balanceBeforeSplit) {
+            animateBalanceDeduction(balanceBeforeSplit, updatedBalance);
+          } else {
+            setBalanceDisplayCents(updatedBalance);
+            clearBalanceDelta();
+          }
+        } catch (e) {
+          console.error('Failed to refresh balance after split', e);
+        }
+      }
     } catch (err) {
       if (splitRequestRef.current.get(id) === splitToken) {
         console.error('AI split failed', err);
@@ -1383,9 +1474,16 @@ const App = () => {
                 <span>Tasks</span>
                 <strong style={{ marginLeft: 4 }}>{stats.total}</strong>
               </div>
-              <div>
+              <div className="balance-row">
                 <span>Balance</span>
-                <strong style={{ marginLeft: 4 }}>${(balanceCents / 100).toFixed(2)}</strong>
+                <div className="balance-amount">
+                  {balanceDeltaCents !== null && (
+                    <span key={balanceDeltaKey} className="balance-delta" style={balanceDeltaStyle}>
+                      -{formatCurrency(balanceDeltaCents)}
+                    </span>
+                  )}
+                  <strong>{formatCurrency(balanceDisplayCents)}</strong>
+                </div>
               </div>
             </div>
           </div>
