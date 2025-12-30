@@ -238,6 +238,13 @@ export const generateSubtasks = async ({ task, ancestors = [], conversation = []
     images: Math.round(imageBytes / 1024)
   });
   console.log('[generateSubtasks] Attachment summary:', attachmentSummary);
+  const attachmentMetaText = attachmentSummary
+    .map((a) => {
+      const sizeKb = a.size ? `${Math.round(a.size / 1024)}kb` : 'size unknown';
+      const location = a.hasR2Key ? 'stored remotely' : 'inline';
+      return `${a.name} (${a.contentType}; ${a.extractionStatus}; ${location}; ${sizeKb})`;
+    })
+    .join(' | ');
   
   const resolvedImages = supportsFilesFlag ? await Promise.all(imageAttachments.map(resolveAttachment)) : [];
   const resolvedPdfs = supportsFilesFlag ? await Promise.all(pdfAttachments.map(resolveAttachment)) : [];
@@ -272,8 +279,11 @@ export const generateSubtasks = async ({ task, ancestors = [], conversation = []
     'Prefer fewer, higher-impact steps; the user can further split subtasks later if they want daily action items.',
     'IMPORTANT: Ensure completeness and symmetry. If you create a subtask for "first half" or "part 1" of something, you MUST also create corresponding subtasks for "second half" or remaining parts. Never leave partial work incomplete.',
     supportsFilesFlag
-      ? 'Treat attachments as ground truth for progress. If files show partially or fully completed work (e.g., first half of a table already filled), do NOT plan that work again—start from what remains even if the description omits it.'
+      ? 'Treat attachments as ground truth for progress. If files show partially or fully completed work (e.g., first half of a table already filled), do NOT plan that work again—start from what remains even if the description omits it. If the deliverable already looks complete, focus on polish/review/submit instead of redoing it.'
       : 'No file access: rely on the task text for progress; do not assume extra context from attachments.',
+    supportsFilesFlag
+      ? 'Inspect images/PDFs for completed tables, pasted passages, or filled sections. Assume attachments reflect the latest state even if the description lags.'
+      : '',
     'Do NOT emit or invent a startDate for subtasks; only use dueDate when needed.',
     supportsFilesFlag
       ? 'Use deep reasoning: anticipate risks, add QA/validation steps, and suggest buffers.'
@@ -287,8 +297,9 @@ export const generateSubtasks = async ({ task, ancestors = [], conversation = []
     `Task due: ${task.dueDate ?? 'not provided'}`,
     `Task description: ${task.description || 'none'}`,
     `Attachments: ${task.attachments.map((a) => a.name || a.type || 'file').join(', ') || 'none'}`,
+    attachmentMetaText ? `Attachment details: ${attachmentMetaText}` : '',
     attachmentContext ? `Attachment excerpts:\n${attachmentContext}` : '',
-    imageParts.length || pdfParts.length ? 'See attached files for additional context.' : '',
+    imageParts.length || pdfParts.length ? 'See attached files for current progress—do not redo work already shown there.' : '',
     recentChat ? `Conversation hints:\n${recentChat}` : ''
   ]
     .filter(Boolean)

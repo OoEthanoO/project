@@ -1834,7 +1834,7 @@ const App = () => {
               </button>
             </div>
             <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>
-              No refunds. For production, connect a PCI-compliant payment provider.
+              No refunds.
             </p>
           </div>
         </div>
