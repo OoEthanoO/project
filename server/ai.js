@@ -200,7 +200,7 @@ export const generateSubtasks = async ({ task, ancestors = [], conversation = []
     .map((c) => `${c.role === 'user' ? 'User' : 'AI'}: ${c.content}`)
     .join('\n');
   const attachmentContext = (task.attachments || [])
-    .filter((a) => a.content && a.extractionStatus === 'ok' && a.contentType !== 'application/pdf')
+    .filter((a) => a.content && a.extractionStatus === 'ok')
     .slice(0, 3)
     .map((a) => `${a.name || 'file'}:\n${(a.content || '').slice(0, 800)}`)
     .join('\n---\n');
@@ -271,6 +271,9 @@ export const generateSubtasks = async ({ task, ancestors = [], conversation = []
     'If work is in units (pages/chapters/problems), group units into a manageable number of subtasks rather than daily slices.',
     'Prefer fewer, higher-impact steps; the user can further split subtasks later if they want daily action items.',
     'IMPORTANT: Ensure completeness and symmetry. If you create a subtask for "first half" or "part 1" of something, you MUST also create corresponding subtasks for "second half" or remaining parts. Never leave partial work incomplete.',
+    supportsFilesFlag
+      ? 'Treat attachments as ground truth for progress. If files show partially or fully completed work (e.g., first half of a table already filled), do NOT plan that work again—start from what remains even if the description omits it.'
+      : 'No file access: rely on the task text for progress; do not assume extra context from attachments.',
     'Do NOT emit or invent a startDate for subtasks; only use dueDate when needed.',
     supportsFilesFlag
       ? 'Use deep reasoning: anticipate risks, add QA/validation steps, and suggest buffers.'
