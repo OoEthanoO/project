@@ -179,6 +179,8 @@ const ListItem = ({
   const isDone = task.status === 'done';
   const showMenuButton = !isMobile && !editing;
   const isSplitting = planningIds?.has(task.id);
+  const titleText = task.title?.trim() ?? '';
+  const hasTitle = titleText.length > 0;
   const descriptionText = task.description?.trim() ?? '';
   const hasDescription = descriptionText.length > 0;
   const hasMinBalance = (balanceCents ?? 0) >= 50;
@@ -282,6 +284,11 @@ const ListItem = ({
     setAttachError('');
     const extracted = await Promise.all(incoming.map((file) => extractAttachment(file, userId)));
     setAttachments((prev) => [...prev, ...extracted]);
+  };
+
+  const handleCopyTitle = () => {
+    if (!hasTitle) return;
+    void copyTextToClipboard(titleText);
   };
 
   const handleCopyDescription = () => {
@@ -530,6 +537,17 @@ const ListItem = ({
               title={splitDisabledReason}
             >
               {planningIds?.has(task.id) ? 'Planning…' : '🤖 AI split'}
+            </button>
+            <button
+              className="context-menu-item"
+              onClick={() => {
+                setContextMenu(null);
+                handleCopyTitle();
+              }}
+              disabled={!hasTitle}
+              title={!hasTitle ? 'No title to copy.' : 'Copy task name'}
+            >
+              dY"< Copy name
             </button>
             <button
               className="context-menu-item"

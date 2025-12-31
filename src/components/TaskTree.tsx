@@ -230,6 +230,8 @@ const TaskNodeView = ({
   const showMenuButton = !isMobile && !editing;
   const isOnboardingSplitTarget = onboardingSplitTaskId === task.id;
   const isSplitting = planningIds?.has(task.id);
+  const titleText = task.title?.trim() ?? '';
+  const hasTitle = titleText.length > 0;
   const descriptionText = task.description?.trim() ?? '';
   const hasDescription = descriptionText.length > 0;
   const hasMinBalance = (balanceCents ?? 0) >= 50;
@@ -361,6 +363,11 @@ const TaskNodeView = ({
     }
     const rect = e.currentTarget.getBoundingClientRect();
     setContextMenu({ x: rect.left, y: rect.bottom + 6 });
+  };
+
+  const handleCopyTitle = () => {
+    if (!hasTitle) return;
+    void copyTextToClipboard(titleText);
   };
 
   const handleCopyDescription = () => {
@@ -848,6 +855,17 @@ const TaskNodeView = ({
                 className="secondary"
                 onClick={() => {
                   setShowMobileModal(false);
+                  handleCopyTitle();
+                }}
+                disabled={!hasTitle}
+                title={!hasTitle ? 'No title to copy.' : 'Copy task name'}
+              >
+                Copy name
+              </button>
+              <button
+                className="secondary"
+                onClick={() => {
+                  setShowMobileModal(false);
                   handleCopyDescription();
                 }}
                 disabled={!hasDescription}
@@ -956,6 +974,17 @@ const TaskNodeView = ({
             data-onboarding={isOnboardingSplitTarget && onboardingShowSplit ? 'split-task' : undefined}
           >
             {planningIds?.has(task.id) ? 'Planning…' : '🤖 AI split'}
+          </button>
+          <button
+            className="context-menu-item"
+            onClick={() => {
+              setContextMenu(null);
+              handleCopyTitle();
+            }}
+            disabled={!hasTitle}
+            title={!hasTitle ? 'No title to copy.' : 'Copy task name'}
+          >
+            dY"< Copy name
           </button>
           <button
             className="context-menu-item"
