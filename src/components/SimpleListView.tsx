@@ -540,14 +540,14 @@ const ListItem = ({
             </button>
             <button
               className="context-menu-item"
-              onClick={() => {
-                setContextMenu(null);
-                handleCopyTitle();
-              }}
-              disabled={!hasTitle}
-              title={!hasTitle ? 'No title to copy.' : 'Copy task name'}
-            >
-              dY"< Copy name
+            onClick={() => {
+              setContextMenu(null);
+              handleCopyTitle();
+            }}
+            disabled={!hasTitle}
+            title={!hasTitle ? 'No title to copy.' : 'Copy task name'}
+          >
+              📋 Copy name
             </button>
             <button
               className="context-menu-item"

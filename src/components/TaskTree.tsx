@@ -984,7 +984,7 @@ const TaskNodeView = ({
             disabled={!hasTitle}
             title={!hasTitle ? 'No title to copy.' : 'Copy task name'}
           >
-            dY"< Copy name
+            📋 Copy name
           </button>
           <button
             className="context-menu-item"
