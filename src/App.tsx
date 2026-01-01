@@ -8,7 +8,7 @@ import SimpleListView from './components/SimpleListView';
 import ChatPanel from './components/ChatPanel';
 import AdminPanel from './components/AdminPanel';
 import { ChatMessage, TaskNode } from './types';
-import { addChild, findTask, randomId, removeTask, reorderWithinParent, updateTask, getR2KeysForTask, getAncestors, moveTaskToTop, moveTaskToBottom } from './lib/task-utils';
+import { addChild, findTask, randomId, removeTask, reorderWithinParent, updateTask, getR2KeysForTask, getAncestors, moveTaskToTop, moveTaskToBottom, updateAncestorStatuses } from './lib/task-utils';
 import { chatWithPlanner, generateSubtasks } from './lib/ai';
 import AuthForm from './components/AuthForm';
 import { currentUser, login, logout, register } from './lib/auth';
@@ -1102,12 +1102,14 @@ const App = () => {
 
   const handleUpdateTask = (id: string, updates: Partial<TaskNode>) => {
     lastUserActionRef.current = Date.now();
-    setTasks((prev) =>
-      updateTask(prev, id, (t) => ({
+    setTasks((prev) => {
+      const next = updateTask(prev, id, (t) => ({
         ...t,
         ...updates
-      }))
-    );
+      }));
+      if (!updates.status) return next;
+      return updateAncestorStatuses(next, id);
+    });
   };
 
   const handleClearAiSubtasks = (parentId: string) => {

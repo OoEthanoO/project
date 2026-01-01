@@ -152,3 +152,35 @@ export const getAncestors = (tasks, id) => {
   traverse(tasks);
   return ancestors;
 };
+
+const getStatusFromChildren = (children) => {
+  if (!children || children.length === 0) return null;
+  let allOpen = true;
+  let allDone = true;
+  for (const child of children) {
+    const status = child.status || 'open';
+    if (status !== 'open') allOpen = false;
+    if (status !== 'done') allDone = false;
+  }
+  if (allOpen) return 'open';
+  if (allDone) return 'done';
+  return 'in-progress';
+};
+
+export const updateAncestorStatuses = (tasks, id) => {
+  const ancestors = getAncestors(tasks, id);
+  if (!ancestors.length) return tasks;
+  let next = tasks;
+  for (let i = ancestors.length - 1; i >= 0; i -= 1) {
+    const ancestor = ancestors[i];
+    const current = findTask(next, ancestor.id);
+    if (!current) continue;
+    const derivedStatus = getStatusFromChildren(current.children || []);
+    if (!derivedStatus || current.status === derivedStatus) continue;
+    next = updateTask(next, ancestor.id, (t) => ({
+      ...t,
+      status: derivedStatus
+    }));
+  }
+  return next;
+};
