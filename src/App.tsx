@@ -59,6 +59,67 @@ const isDueTodayOrPast = (dueDate?: string) => {
   return due <= todayUtc;
 };
 
+const copyTextToClipboard = async (text: string) => {
+  if (!text) return;
+  try {
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+  } catch (err) {
+    console.warn('Clipboard API failed, falling back to execCommand.', err);
+  }
+  if (typeof document === 'undefined') return;
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', 'true');
+  textarea.style.position = 'fixed';
+  textarea.style.top = '-1000px';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+  textarea.select();
+  try {
+    document.execCommand('copy');
+  } finally {
+    document.body.removeChild(textarea);
+  }
+};
+
+const buildTaskListText = (tasks: TaskNode[]) => {
+  const lines: string[] = [];
+  const walk = (list: TaskNode[], depth: number) => {
+    (list || []).forEach((task) => {
+      const indent = '  '.repeat(depth);
+      const statusMark = task.status === 'done' ? '[x]' : task.status === 'in-progress' ? '[-]' : '[ ]';
+      const title = task.title?.trim() || '(untitled task)';
+      const metaParts: string[] = [];
+      if (task.dueDate) metaParts.push(`due ${task.dueDate}`);
+      if (task.startDate) metaParts.push(`start ${task.startDate}`);
+      const attachmentCount = task.attachments?.length ?? 0;
+      if (attachmentCount > 0) {
+        metaParts.push(`${attachmentCount} attachment${attachmentCount === 1 ? '' : 's'}`);
+      }
+      if (task.createdBy === 'ai') metaParts.push('ai');
+      const metaText = metaParts.length ? ` (${metaParts.join(', ')})` : '';
+      lines.push(`${indent}- ${statusMark} ${title}${metaText}`);
+      const description = (task.description || '').trim();
+      if (description) {
+        const formatted = description.replace(/\r?\n/g, `\n${indent}  `);
+        lines.push(`${indent}  notes: ${formatted}`);
+      }
+      if (task.attachments?.length) {
+        const names = task.attachments.map((a) => a.name || a.type || 'file').join(', ');
+        lines.push(`${indent}  attachments: ${names}`);
+      }
+      if (task.children?.length) {
+        walk(task.children, depth + 1);
+      }
+    });
+  };
+  walk(tasks, 0);
+  return lines.join('\n');
+};
+
 const App = () => {
   const [tasks, setTasks] = useState<TaskNode[]>([]);
   const [trash, setTrash] = useState<TaskNode[]>([]);
@@ -85,6 +146,7 @@ const App = () => {
   const [isEditingTask, setIsEditingTask] = useState(false); // Track if any task is in edit mode
   const [backupAvailable, setBackupAvailable] = useState<any>(null); // Track if backup exists
   const [showAccountDropdown, setShowAccountDropdown] = useState(false);
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'error'>('idle');
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState(0);
   const [onboardingTargetRect, setOnboardingTargetRect] = useState<DOMRect | null>(null);
@@ -131,6 +193,7 @@ const App = () => {
   const BALANCE_DELTA_PAUSE_MS = 3000;
   const formatCurrency = (cents: number) => `$${(cents / 100).toFixed(2)}`;
   const balanceDeltaStyle = { '--balance-delta-delay': `${BALANCE_DELTA_PAUSE_MS}ms` } as CSSProperties;
+  const copyResetRef = useRef<number | null>(null);
   const clearBalanceDelta = () => {
     if (balanceDeltaTimeoutRef.current) {
       window.clearTimeout(balanceDeltaTimeoutRef.current);
@@ -938,6 +1001,34 @@ const App = () => {
       hasContext: all.some((t) => t.attachments.length > 0 || t.description)
     };
   }, [tasks]);
+
+  const handleCopyTasks = async () => {
+    const text = buildTaskListText(tasks);
+    if (!text.trim()) return;
+    try {
+      await copyTextToClipboard(text);
+      setCopyState('copied');
+    } catch (err) {
+      console.error('Copy tasks failed', err);
+      setCopyState('error');
+    }
+    if (copyResetRef.current) {
+      window.clearTimeout(copyResetRef.current);
+    }
+    copyResetRef.current = window.setTimeout(() => {
+      setCopyState('idle');
+      copyResetRef.current = null;
+    }, 1800);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (copyResetRef.current) {
+        window.clearTimeout(copyResetRef.current);
+      }
+    };
+  }, []);
+
   const handleAddTask = (task: TaskNode) => {
     lastUserActionRef.current = Date.now();
     setTasks((prev) => addChild(prev, task.parentId ?? null, task));
@@ -1574,7 +1665,24 @@ const App = () => {
           </div>
           
           {/* Settings at bottom */}
-          <div className="sidebar-section" style={{ marginTop: 'auto' }}>
+          <div className="sidebar-section" style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <button
+              className="secondary"
+              onClick={handleCopyTasks}
+              disabled={stats.total === 0}
+              title={
+                stats.total === 0
+                  ? 'No tasks to copy.'
+                  : copyState === 'copied'
+                    ? 'Copied!'
+                    : copyState === 'error'
+                      ? 'Copy failed. Try again.'
+                      : 'Copy all tasks to clipboard.'
+              }
+              style={{ width: '100%', justifyContent: 'center' }}
+            >
+              {copyState === 'copied' ? '✅ Copied' : copyState === 'error' ? '⚠️ Copy failed' : '📋 Copy tasks'}
+            </button>
             <button 
               className="secondary" 
               ref={settingsButtonRef}
