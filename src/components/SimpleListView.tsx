@@ -95,6 +95,17 @@ const compareAssociatedDueDate = (a: FlatTask, b: FlatTask, taskById: Map<string
   return dueA.localeCompare(dueB);
 };
 
+const compareRootPlacements = (a: FlatTask, b: FlatTask, taskById: Map<string, FlatTask>) => {
+  const minLength = Math.min(a.ancestry.length, b.ancestry.length);
+  for (let i = 0; i < minLength; i += 1) {
+    const taskA = taskById.get(a.ancestry[i]);
+    const taskB = taskById.get(b.ancestry[i]);
+    if (!taskA || !taskB) return null;
+    if (taskA.order !== taskB.order) return taskA.order - taskB.order;
+  }
+  return null;
+};
+
 const compareTasks = (taskById: Map<string, FlatTask>) => (a: FlatTask, b: FlatTask) => {
   if (!a.dueDate && !b.dueDate) {
     // No due date: preserve tree order
@@ -107,12 +118,12 @@ const compareTasks = (taskById: Map<string, FlatTask>) => (a: FlatTask, b: FlatT
   // same due date: compare associated (root) due date
   const associatedDueCmp = compareAssociatedDueDate(a, b, taskById);
   if (associatedDueCmp !== 0) return associatedDueCmp;
-  // same due date: deeper depth first
+  // same associated due date: compare root placements in the tree
+  const rootPlacementCmp = compareRootPlacements(a, b, taskById);
+  if (rootPlacementCmp !== null) return rootPlacementCmp;
+  // when ancestry runs out or ties, deeper depth first
   if (a.depth !== b.depth) return b.depth - a.depth;
-  // same depth: order by the branch under the lowest common ancestor
-  const ancestorCmp = compareByLowestCommonAncestor(a, b, taskById);
-  if (ancestorCmp !== null) return ancestorCmp;
-  // fallback: preserve tree order
+  // final fallback: preserve tree order
   return a.order - b.order;
 };
 
