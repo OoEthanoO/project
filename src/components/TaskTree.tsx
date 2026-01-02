@@ -210,6 +210,8 @@ const TaskNodeView = ({
   const [showSubForm, setShowSubForm] = useState(false);
   const [showMobileModal, setShowMobileModal] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [copySubmenuOpen, setCopySubmenuOpen] = useState(false);
+  const copySubmenuCloseTimeoutRef = useRef<number | null>(null);
   const [isMobile, setIsMobile] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement | null>(null);
   const isStartAfterDue = task.startDate && task.dueDate && task.startDate >= task.dueDate;
@@ -292,6 +294,7 @@ const TaskNodeView = ({
       const target = e.target as HTMLElement;
       if (!target.closest('.context-menu')) {
         setContextMenu(null);
+        setCopySubmenuOpen(false);
       }
     };
     if (contextMenu) {
@@ -302,6 +305,16 @@ const TaskNodeView = ({
       return () => document.removeEventListener('click', handleClickOutside);
     }
   }, [contextMenu]);
+
+  useEffect(() => {
+    if (!contextMenu && copySubmenuOpen) {
+      setCopySubmenuOpen(false);
+    }
+    if (!contextMenu && copySubmenuCloseTimeoutRef.current) {
+      window.clearTimeout(copySubmenuCloseTimeoutRef.current);
+      copySubmenuCloseTimeoutRef.current = null;
+    }
+  }, [contextMenu, copySubmenuOpen]);
 
   const handleFiles = async (files: FileList | null) => {
     if (!files) return;
@@ -375,12 +388,38 @@ const TaskNodeView = ({
     void copyTextToClipboard(descriptionText);
   };
 
+  const handleCopyBoth = () => {
+    if (!hasTitle && !hasDescription) return;
+    const combined = hasTitle
+      ? `${titleText}${hasDescription ? `. ${descriptionText}` : ''}`
+      : descriptionText;
+    void copyTextToClipboard(combined);
+  };
+
   const handleClearAiChildren = () => {
     if (onClearAiSubtasks) {
       onClearAiSubtasks(task.id);
       return;
     }
     onUpdate(task.id, { children: (task.children || []).filter((c) => c.createdBy !== 'ai') });
+  };
+
+  const openCopySubmenu = () => {
+    if (copySubmenuCloseTimeoutRef.current) {
+      window.clearTimeout(copySubmenuCloseTimeoutRef.current);
+      copySubmenuCloseTimeoutRef.current = null;
+    }
+    setCopySubmenuOpen(true);
+  };
+
+  const scheduleCloseCopySubmenu = () => {
+    if (copySubmenuCloseTimeoutRef.current) {
+      window.clearTimeout(copySubmenuCloseTimeoutRef.current);
+    }
+    copySubmenuCloseTimeoutRef.current = window.setTimeout(() => {
+      setCopySubmenuOpen(false);
+      copySubmenuCloseTimeoutRef.current = null;
+    }, 150);
   };
 
   const handleDragStart = (e: React.DragEvent) => {
@@ -952,6 +991,7 @@ const TaskNodeView = ({
               e.stopPropagation();
               e.preventDefault();
               setContextMenu(null);
+              setCopySubmenuOpen(false);
             }}
           />
           <div
@@ -975,28 +1015,60 @@ const TaskNodeView = ({
           >
             {planningIds?.has(task.id) ? 'Planning…' : '🤖 AI split'}
           </button>
-          <button
-            className="context-menu-item"
-            onClick={() => {
-              setContextMenu(null);
-              handleCopyTitle();
-            }}
-            disabled={!hasTitle}
-            title={!hasTitle ? 'No title to copy.' : 'Copy task name'}
+          <div
+            className={`context-menu-item has-submenu ${copySubmenuOpen ? 'open' : ''}`}
+            onMouseEnter={openCopySubmenu}
+            onMouseLeave={scheduleCloseCopySubmenu}
+            onClick={(e) => e.stopPropagation()}
+            title="Copy task details"
           >
-            📋 Copy name
-          </button>
-          <button
-            className="context-menu-item"
-            onClick={() => {
-              setContextMenu(null);
-              handleCopyDescription();
-            }}
-            disabled={!hasDescription}
-            title={!hasDescription ? 'No description to copy.' : 'Copy description'}
-          >
-            📋 Copy description
-          </button>
+            📋 Copy
+            {copySubmenuOpen && (
+              <div
+                className="context-submenu"
+                onMouseEnter={openCopySubmenu}
+                onMouseLeave={scheduleCloseCopySubmenu}
+              >
+                <button
+                  className="context-submenu-item"
+                  onClick={() => {
+                    setContextMenu(null);
+                    setCopySubmenuOpen(false);
+                    handleCopyTitle();
+                  }}
+                  disabled={!hasTitle}
+                  title={!hasTitle ? 'No title to copy.' : 'Copy task name'}
+                >
+                  Name
+                </button>
+                <button
+                  className="context-submenu-item"
+                  onClick={() => {
+                    setContextMenu(null);
+                    setCopySubmenuOpen(false);
+                    handleCopyDescription();
+                  }}
+                  disabled={!hasDescription}
+                  title={!hasDescription ? 'No description to copy.' : 'Copy description'}
+                >
+                  Description
+                </button>
+                <button
+                  className="context-submenu-item"
+                  onClick={() => {
+                    setContextMenu(null);
+                    setCopySubmenuOpen(false);
+                    handleCopyBoth();
+                  }}
+                  disabled={!hasTitle && !hasDescription}
+                  title={!hasTitle && !hasDescription ? 'Nothing to copy.' : 'Copy name and description'}
+                >
+                  Both
+                </button>
+              </div>
+            )}
+          </div>
+
           <button
             className="context-menu-item"
             onClick={() => {

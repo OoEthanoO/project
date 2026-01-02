@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { CSSProperties, SyntheticEvent } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import TaskForm from './components/TaskForm';
@@ -120,6 +121,20 @@ const buildTaskListText = (tasks: TaskNode[]) => {
   return lines.join('\n');
 };
 
+const collectCollapsibleTaskIds = (taskList: TaskNode[]) => {
+  const ids: string[] = [];
+  const walk = (list: TaskNode[]) => {
+    list.forEach((task) => {
+      if (task.children?.length) {
+        ids.push(task.id);
+        walk(task.children);
+      }
+    });
+  };
+  walk(taskList || []);
+  return ids;
+};
+
 const App = () => {
   const [tasks, setTasks] = useState<TaskNode[]>([]);
   const [trash, setTrash] = useState<TaskNode[]>([]);
@@ -194,6 +209,7 @@ const App = () => {
   const formatCurrency = (cents: number) => `$${(cents / 100).toFixed(2)}`;
   const balanceDeltaStyle = { '--balance-delta-delay': `${BALANCE_DELTA_PAUSE_MS}ms` } as CSSProperties;
   const copyResetRef = useRef<number | null>(null);
+  const [panelContextMenu, setPanelContextMenu] = useState<{ x: number; y: number } | null>(null);
   const clearBalanceDelta = () => {
     if (balanceDeltaTimeoutRef.current) {
       window.clearTimeout(balanceDeltaTimeoutRef.current);
@@ -436,6 +452,30 @@ const App = () => {
   }, []);
 
   useEffect(() => {
+    if (!panelContextMenu) return;
+    const handleOutsideClick = (e: Event) => {
+      const target = e.target as HTMLElement | null;
+      if (!target?.closest('.context-menu')) {
+        setPanelContextMenu(null);
+      }
+    };
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setPanelContextMenu(null);
+      }
+    };
+    const timer = window.setTimeout(() => {
+      document.addEventListener('click', handleOutsideClick);
+    }, 0);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener('click', handleOutsideClick);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [panelContextMenu]);
+
+  useEffect(() => {
     if (!showOnboarding) {
       setOnboardingTargetRect(null);
       return;
@@ -495,6 +535,10 @@ const App = () => {
       setOnboardingTooltipHeight(rect.height);
     }
   }, [showOnboarding, onboardingStep, currentOnboarding, tasks.length, onboardingTooltipHeight, isMobile]);
+
+  useEffect(() => {
+    setPanelContextMenu(null);
+  }, [activeTab]);
 
   useEffect(() => {
     if (activeTab !== 'settings') {
@@ -1028,6 +1072,12 @@ const App = () => {
       }
     };
   }, []);
+
+  const collapseAllTasks = () => {
+    const allCollapsibleIds = collectCollapsibleTaskIds(tasks);
+    lastUserActionRef.current = Date.now();
+    setCollapsedTaskIds(new Set(allCollapsibleIds));
+  };
 
   const handleAddTask = (task: TaskNode) => {
     lastUserActionRef.current = Date.now();
@@ -1700,7 +1750,18 @@ const App = () => {
         </aside>
 
         {/* Main panel */}
-        <div className="panel">
+        <div
+          className="panel"
+          onContextMenu={(e) => {
+            if (activeTab !== 'tree') return;
+            const target = e.target as HTMLElement | null;
+            if (target && (target.closest('input, textarea, select, button') || target.closest('.task-card'))) {
+              return;
+            }
+            e.preventDefault();
+            setPanelContextMenu({ x: e.clientX, y: e.clientY });
+          }}
+        >
           {/* Scrollable content area */}
           <div className="panel-content">
         {activeTab === 'tree' ? (
@@ -1795,6 +1856,34 @@ const App = () => {
           </aside>
         )}
       </div> {/* End app-content */}
+
+      {panelContextMenu && activeTab === 'tree' && createPortal(
+        <>
+          <div className="context-menu-backdrop" onClick={() => setPanelContextMenu(null)} />
+          <div
+            className="context-menu"
+            style={{
+              position: 'fixed',
+              left: `${Math.min(panelContextMenu.x, window.innerWidth - 220)}px`,
+              top: `${Math.min(panelContextMenu.y, window.innerHeight - 120)}px`
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              className="context-menu-item"
+              onClick={() => {
+                setPanelContextMenu(null);
+                collapseAllTasks();
+              }}
+              disabled={tasks.length === 0}
+              title={tasks.length === 0 ? 'No tasks to collapse.' : 'Collapse all tasks in the tree view'}
+            >
+              Collapse all tasks
+            </button>
+          </div>
+        </>,
+        document.body
+      )}
 
       {/* Mobile bottom view selector */}
       <div className="mobile-view-selector">
