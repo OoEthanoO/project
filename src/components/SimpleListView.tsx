@@ -16,7 +16,7 @@ type Props = {
   balanceCents?: number;
 };
 
-type FlatTask = TaskNode & { depth: number; order: number; parentTitle?: string };
+type FlatTask = TaskNode & { depth: number; order: number; parentTitle?: string; ancestry: string[] };
 
 const copyTextToClipboard = async (text: string) => {
   if (!text) return;
@@ -44,16 +44,47 @@ const copyTextToClipboard = async (text: string) => {
   }
 };
 
-const flattenTasks = (tasks: TaskNode[], depth = 0, orderRef = { value: 0 }, parentTitle?: string): FlatTask[] => {
+const flattenTasks = (
+  tasks: TaskNode[],
+  depth = 0,
+  orderRef = { value: 0 },
+  parentTitle?: string,
+  ancestry: string[] = []
+): FlatTask[] => {
   return tasks.flatMap((t) => {
     const currentOrder = orderRef.value++;
-    const self: FlatTask = { ...t, parentId: t.parentId, title: t.title || '(untitled task)', depth, order: currentOrder, parentTitle };
-    const children = flattenTasks(t.children || [], depth + 1, orderRef, t.title || '(untitled task)');
+    const nextAncestry = [...ancestry, t.id];
+    const self: FlatTask = {
+      ...t,
+      parentId: t.parentId,
+      title: t.title || '(untitled task)',
+      depth,
+      order: currentOrder,
+      parentTitle,
+      ancestry: nextAncestry
+    };
+    const children = flattenTasks(t.children || [], depth + 1, orderRef, t.title || '(untitled task)', nextAncestry);
     return [self, ...children];
   });
 };
 
-const compareTasks = (a: FlatTask, b: FlatTask) => {
+const compareByLowestCommonAncestor = (a: FlatTask, b: FlatTask, taskById: Map<string, FlatTask>) => {
+  const pathA = a.ancestry;
+  const pathB = b.ancestry;
+  const minLength = Math.min(pathA.length, pathB.length);
+  let idx = 0;
+  while (idx < minLength && pathA[idx] === pathB[idx]) {
+    idx += 1;
+  }
+  if (idx === 0 || idx >= minLength) return null;
+  const aBranch = taskById.get(pathA[idx]);
+  const bBranch = taskById.get(pathB[idx]);
+  if (!aBranch || !bBranch) return null;
+  if (aBranch.order === bBranch.order) return null;
+  return aBranch.order - bBranch.order;
+};
+
+const compareTasks = (taskById: Map<string, FlatTask>) => (a: FlatTask, b: FlatTask) => {
   if (!a.dueDate && !b.dueDate) {
     // No due date: preserve tree order
     return a.order - b.order;
@@ -64,7 +95,10 @@ const compareTasks = (a: FlatTask, b: FlatTask) => {
   if (dueCmp !== 0) return dueCmp;
   // same due date: deeper depth first
   if (a.depth !== b.depth) return b.depth - a.depth;
-  // same depth: preserve tree order
+  // same depth: order by the branch under the lowest common ancestor
+  const ancestorCmp = compareByLowestCommonAncestor(a, b, taskById);
+  if (ancestorCmp !== null) return ancestorCmp;
+  // fallback: preserve tree order
   return a.order - b.order;
 };
 
@@ -122,8 +156,10 @@ const uploadPendingAttachments = async (attachments: Attachment[], userId?: stri
 
 const SimpleListView = ({ tasks, onSplit, onDelete, onUpdate, planningIds = new Set(), onEditModeChange, userId, balanceCents }: Props) => {
   const flat = flattenTasks(tasks || []);
-  const openAndProgress = flat.filter((t) => t.status !== 'done').sort(compareTasks);
-  const completed = flat.filter((t) => t.status === 'done').sort((a, b) => -compareTasks(a, b));
+  const taskById = new Map(flat.map((task) => [task.id, task]));
+  const taskComparator = compareTasks(taskById);
+  const openAndProgress = flat.filter((t) => t.status !== 'done').sort(taskComparator);
+  const completed = flat.filter((t) => t.status === 'done').sort((a, b) => -taskComparator(a, b));
   const sorted = [...openAndProgress, ...completed];
 
   return (
