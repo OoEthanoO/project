@@ -875,8 +875,8 @@ textarea {
   pointer-events: none;
   transition: opacity 140ms ease;
 }
-.task-card:hover .menu-toggle,
-.task-card:focus-within .menu-toggle,
+.task-card:hover > .task-header .menu-toggle,
+.task-card:focus-within > .task-header .menu-toggle,
 .menu-toggle:focus-visible {
   opacity: 1;
   pointer-events: auto;
@@ -985,7 +985,13 @@ textarea {
 .auth-actions button {
   flex: 1 1 160px;
 }
-.subtasks { margin-left: 12px; margin-top: 12px; }
+.subtasks {
+  margin-left: 12px;
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
 
 /* Slideover (chat on the right) */
 .slideover {

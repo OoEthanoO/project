@@ -906,8 +906,8 @@ const App = () => {
         const newCollapsedIds: Set<string> = new Set<string>((state.config?.collapsedTaskIds || []) as string[]);
         setGlobalInstruction((prev) => prev === newInstruction ? prev : newInstruction);
         setModelId((prev) => prev === validatedModelId ? prev : validatedModelId);
-        if (startedAt < lastUserActionRef.current) {
-          // Skip collapsed-id update if user interacted after this poll started
+        if (startedAt < lastUserActionRef.current || hasPendingLocalChanges) {
+          // Skip collapsed-id update if user interacted after this poll started or local changes are pending
         } else {
           setCollapsedTaskIds((prev) => {
             const prevArray = Array.from(prev).sort().join(',');
