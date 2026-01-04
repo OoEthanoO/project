@@ -1,5 +1,6 @@
 import { TaskNode } from '../types';
 import AttachmentList from './AttachmentList';
+import { formatWorkDays } from '../lib/work-days';
 
 type Props = {
   items: TaskNode[];
@@ -34,6 +35,7 @@ const TrashCan = ({ items, onRestore, onDeleteForever, onNavigateToPlan }: Props
               <span className="trash-subtask-title">{node.title}</span>
               {node.createdBy === 'ai' && <span className="badge badge-ai">AI</span>}
               {node.dueDate && <span className="badge">Due {node.dueDate}</span>}
+              {node.workDays?.length ? <span className="badge">Work days {formatWorkDays(node.workDays)}</span> : null}
             </div>
             {node.description ? <p className="muted trash-subtask-description">{node.description}</p> : null}
             {(node.children || []).length > 0 ? renderSubtasks(node.children || []) : null}
@@ -54,6 +56,7 @@ const TrashCan = ({ items, onRestore, onDeleteForever, onNavigateToPlan }: Props
                 {task.deletedAt && <span className="badge">Deleted {task.deletedAt.slice(0, 10)}</span>}
                 {task.dueDate && <span className="badge">Due {task.dueDate}</span>}
                 {task.startDate && <span className="badge">Start {task.startDate}</span>}
+                {task.workDays?.length ? <span className="badge">Work days {formatWorkDays(task.workDays)}</span> : null}
                 <span className="badge">Subtasks {(task.children || []).length}</span>
                 {task.attachments?.length ? <span className="badge">{task.attachments.length} file(s)</span> : null}
                 <span className={`badge ${task.createdBy === 'ai' ? 'badge-ai' : 'badge-user'}`}>

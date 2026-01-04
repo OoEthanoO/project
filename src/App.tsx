@@ -18,6 +18,7 @@ import { fetchBalance, topUp } from './lib/billing';
 import { createCheckoutSession } from './lib/payments';
 import { getDefaultModel, getValidModelOrDefault, getModelById } from '../shared/model-config.js';
 import { getAvailableBackups, restoreFromBackup, clearBackup } from './lib/backup-recovery.js';
+import { formatWorkDays } from './lib/work-days';
 
 const initialCoachMessage = () => ({
   id: randomId(),
@@ -96,6 +97,7 @@ const buildTaskListText = (tasks: TaskNode[]) => {
       const metaParts: string[] = [];
       if (task.dueDate) metaParts.push(`due ${task.dueDate}`);
       if (task.startDate) metaParts.push(`start ${task.startDate}`);
+      if (task.workDays?.length) metaParts.push(`work days ${formatWorkDays(task.workDays)}`);
       const attachmentCount = task.attachments?.length ?? 0;
       if (attachmentCount > 0) {
         metaParts.push(`${attachmentCount} attachment${attachmentCount === 1 ? '' : 's'}`);

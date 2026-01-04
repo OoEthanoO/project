@@ -1,8 +1,9 @@
 import { FormEvent, useState, useRef, useEffect } from 'react';
-import { Attachment, TaskNode } from '../types';
+import { Attachment, TaskNode, WorkDay } from '../types';
 import { randomId } from '../lib/task-utils';
 import { extractAttachment } from '../lib/file-extract';
 import { apiCall } from '../lib/api-client.js';
+import WorkDaysPicker from './WorkDaysPicker';
 
 type Props = {
   onSubmit: (task: TaskNode) => void;
@@ -17,6 +18,7 @@ const TaskForm = ({ onSubmit, parentId = null, onCancel, userId, balanceCents = 
   const [dueDate, setDueDate] = useState('');
   const [startDate, setStartDate] = useState('');
   const [description, setDescription] = useState('');
+  const [workDays, setWorkDays] = useState<WorkDay[]>([]);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [attachError, setAttachError] = useState('');
   const titleInputRef = useRef<HTMLInputElement>(null);
@@ -106,6 +108,7 @@ const TaskForm = ({ onSubmit, parentId = null, onCancel, userId, balanceCents = 
         description: description.trim(),
         dueDate: dueDate || undefined,
         startDate: startDate || undefined,
+        workDays: workDays.length ? workDays : undefined,
         attachments: uploaded as Attachment[],
         children: [],
         parentId,
@@ -120,6 +123,7 @@ const TaskForm = ({ onSubmit, parentId = null, onCancel, userId, balanceCents = 
     setAttachments([]);
     setDueDate('');
     setStartDate('');
+    setWorkDays([]);
     onCancel?.();
   };
 
@@ -170,6 +174,13 @@ const TaskForm = ({ onSubmit, parentId = null, onCancel, userId, balanceCents = 
           value={description}
           onChange={(e) => setDescription(e.target.value)}
         />
+      </div>
+      <div style={{ marginTop: 10 }}>
+        <label className="muted">Work days (optional)</label>
+        <WorkDaysPicker value={workDays} onChange={(next) => setWorkDays(next ?? [])} />
+        <p className="muted" style={{ fontSize: 12, margin: '4px 0' }}>
+          AI subtasks will be due the day after each work day (ex: Tue work day to Wed due date).
+        </p>
       </div>
       <div style={{ marginTop: 10 }}>
         <label className="muted">Attachments</label>

@@ -2,6 +2,15 @@ import fetch from 'node-fetch';
 import { getPricingForUsage, supportsFiles } from '../shared/model-config.js';
 
 const formatDate = (date) => date.toISOString().split('T')[0];
+const WORK_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+const WORK_DAY_INDEX = new Map(WORK_DAYS.map((day, index) => [day, index]));
+const normalizeWorkDays = (days) => (Array.isArray(days) ? days.filter((day) => WORK_DAY_INDEX.has(day)) : []);
+const nextDay = (day) => {
+  const idx = WORK_DAY_INDEX.get(day);
+  if (idx === undefined) return null;
+  return WORK_DAYS[(idx + 1) % WORK_DAYS.length];
+};
+const formatWorkDays = (days) => (days && days.length ? days.join(', ') : 'none');
 
 // Helper: Resolve attachment to data URL or presigned URL
 const resolveAttachment = async (attachment) => {
@@ -195,6 +204,12 @@ export const generateSubtasks = async ({ task, ancestors = [], conversation = []
   const hasValidStartDate = parsedStartDate && !Number.isNaN(parsedStartDate.getTime());
   const effectiveStartDate = hasValidStartDate && parsedStartDate > todayDate ? parsedStartDate : todayDate;
   const startDateText = formatDate(effectiveStartDate);
+  const rootWorkDays = normalizeWorkDays(ancestors.length ? ancestors[0]?.workDays : task.workDays);
+  const taskWorkDays = normalizeWorkDays(task.workDays);
+  const effectiveWorkDays = taskWorkDays.length ? taskWorkDays : rootWorkDays;
+  const allowedDueDays = Array.from(
+    new Set(effectiveWorkDays.map((day) => nextDay(day)).filter(Boolean))
+  );
   const recentChat = conversation
     .slice(-4)
     .map((c) => `${c.role === 'user' ? 'User' : 'AI'}: ${c.content}`)
@@ -274,6 +289,17 @@ export const generateSubtasks = async ({ task, ancestors = [], conversation = []
     'If the parent has a due date, keep every subtask on or before it. Still assign a concrete dueDate after today for every subtask.',
     'Be concise and actionable. Every subtask MUST include a dueDate (YYYY-MM-DD). Never return null for dueDate. Due dates must be AFTER today.',
     'Interpret all due dates as deadlines at the START of that day (00:00), so finish work by the prior day if needed.',
+    rootWorkDays.length || taskWorkDays.length
+      ? 'Work days indicate when the user can work. Because dueDate is a deadline at 00:00, every subtask due date MUST be the day AFTER a work day.'
+      : '',
+    rootWorkDays.length || taskWorkDays.length ? `Root work days: ${formatWorkDays(rootWorkDays)}` : '',
+    rootWorkDays.length || taskWorkDays.length ? `Current task work days: ${formatWorkDays(taskWorkDays)}` : '',
+    rootWorkDays.length || taskWorkDays.length
+      ? `Effective work days (use current if set, otherwise root): ${formatWorkDays(effectiveWorkDays)}`
+      : '',
+    rootWorkDays.length || taskWorkDays.length
+      ? `Valid due weekdays (day AFTER a work day): ${formatWorkDays(allowedDueDays)}`
+      : '',
     'Distribute work sensibly across the timeline; avoid putting everything at the end, but DO NOT create a subtask for every day.',
     'If work is in units (pages/chapters/problems), group units into a manageable number of subtasks rather than daily slices.',
     'Prefer fewer, higher-impact steps; the user can further split subtasks later if they want daily action items.',
@@ -295,6 +321,7 @@ export const generateSubtasks = async ({ task, ancestors = [], conversation = []
     `Today: ${startDateText}`,
     `Task title: ${task.title}`,
     `Task due: ${task.dueDate ?? 'not provided'}`,
+    `Task work days: ${formatWorkDays(taskWorkDays)}`,
     `Task description: ${task.description || 'none'}`,
     `Attachments: ${task.attachments.map((a) => a.name || a.type || 'file').join(', ') || 'none'}`,
     attachmentMetaText ? `Attachment details: ${attachmentMetaText}` : '',

@@ -10,14 +10,14 @@ export default async function handler(req, res) {
     return sendJson(res, 405, { error: 'Method not allowed' });
   }
   try {
-    const { task, conversation, globalInstruction, modelId, userId } = await readJson(req);
+    const { task, ancestors, conversation, globalInstruction, modelId, userId, clientLocalDate, clientTimeZone } = await readJson(req);
     if (!userId) return sendJson(res, 400, { error: 'Missing userId' });
     const isFree = isFreeModel(modelId);
     if (!isFree) {
       const bal = await getBalance(userId);
       if (bal < 50) return sendJson(res, 402, { error: 'Minimum balance of $0.50 required to use AI features' });
     }
-    const result = await generateSubtasks({ task, conversation, globalInstruction, modelId });
+    const result = await generateSubtasks({ task, ancestors, conversation, globalInstruction, modelId, clientLocalDate, clientTimeZone });
     if (!isFree && result.totalCostUsd > 0) {
       const amountCents = Math.ceil(result.totalCostUsd * 100 * 2); // double charge (100% margin)
       await chargeUsage({

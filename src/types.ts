@@ -13,12 +13,22 @@ export type Attachment = {
   file?: File;
 };
 
+export type WorkDay =
+  | 'Monday'
+  | 'Tuesday'
+  | 'Wednesday'
+  | 'Thursday'
+  | 'Friday'
+  | 'Saturday'
+  | 'Sunday';
+
 export type TaskNode = {
   id: string;
   title: string;
   description?: string;
   dueDate?: string;
   startDate?: string;
+  workDays?: WorkDay[];
   attachments: Attachment[];
   children: TaskNode[];
   parentId?: string | null;

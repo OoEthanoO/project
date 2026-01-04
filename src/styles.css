@@ -831,6 +831,14 @@ textarea {
   padding-left: calc(var(--status-icon-size, 14px) + var(--status-icon-gap, 6px));
   display: block;
 }
+.task-work-days {
+  font-size: 11px;
+  padding-left: calc(var(--status-icon-size, 14px) + var(--status-icon-gap, 6px));
+  display: block;
+}
+.task-due-date + .task-work-days {
+  margin-top: 0;
+}
 .task-status-toggle {
   background: none;
   border: none;
@@ -923,6 +931,23 @@ textarea {
 .chip:hover {
   background: #f5f5f7;
   transform: scale(1.02);
+}
+.workday-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.workday-chips { gap: var(--space-xs); }
+.workday-chip { padding: 4px 10px; font-size: 12px; }
+.workday-chip.chip-selected {
+  background: rgba(0, 122, 255, 0.12);
+  border-color: rgba(0, 122, 255, 0.4);
+  color: var(--accent);
+}
+.workday-clear {
+  align-self: flex-start;
+  padding: 2px 8px;
+  font-size: 12px;
 }
 
 .task-actions {
@@ -1630,6 +1655,12 @@ select { min-width: 220px; }
     color: var(--text);
   }
   .pill { background: #1b2030; border-color: var(--border); }
+  .chip:hover { background: #20263a; }
+  .workday-chip.chip-selected {
+    background: rgba(10, 132, 255, 0.2);
+    border-color: rgba(10, 132, 255, 0.5);
+    color: var(--accent);
+  }
 
   button {
     background: #1b2030;

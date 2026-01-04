@@ -1,10 +1,12 @@
 import { useState, MouseEvent, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Attachment, TaskNode } from '../types';
+import { Attachment, TaskNode, WorkDay } from '../types';
 import TaskForm from './TaskForm';
 import AttachmentList from './AttachmentList';
 import { extractAttachment } from '../lib/file-extract';
 import { apiCall } from '../lib/api-client.js';
+import WorkDaysPicker from './WorkDaysPicker';
+import { formatWorkDays } from '../lib/work-days';
 
 type Props = {
   tasks: TaskNode[];
@@ -221,6 +223,7 @@ const TaskNodeView = ({
   const [dueDate, setDueDate] = useState(task.dueDate || '');
   const [startDate, setStartDate] = useState(task.startDate || '');
   const [description, setDescription] = useState(task.description || '');
+  const [workDays, setWorkDays] = useState<WorkDay[]>(task.workDays || []);
   const [attachments, setAttachments] = useState<Attachment[]>(task.attachments || []);
   const [attachError, setAttachError] = useState('');
   const [isUploading, setIsUploading] = useState(false);
@@ -279,8 +282,9 @@ const TaskNodeView = ({
     setDueDate(task.dueDate || '');
     setStartDate(task.startDate || '');
     setDescription(task.description || '');
+    setWorkDays(task.workDays || []);
     setAttachments(task.attachments || []);
-  }, [task.title, task.dueDate, task.startDate, task.description, task.attachments]);
+  }, [task.title, task.dueDate, task.startDate, task.description, task.workDays, task.attachments]);
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth <= 768);
@@ -630,6 +634,9 @@ const TaskNodeView = ({
                   {task.startDate ? `${task.startDate} to ${task.dueDate}` : task.dueDate}
                 </span>
               )}
+              {task.workDays?.length ? (
+                <span className="muted task-work-days">Work days: {formatWorkDays(task.workDays)}</span>
+              ) : null}
             </div>
           )}
         </div>
@@ -694,6 +701,15 @@ const TaskNodeView = ({
       )}
       {editing ? (
         <div style={{ margin: '8px 0 6px' }}>
+          <label className="muted">Work days (optional)</label>
+          <WorkDaysPicker value={workDays} onChange={(next) => setWorkDays(next ?? [])} />
+          <p className="muted" style={{ fontSize: 12, margin: '4px 0' }}>
+            AI subtasks will be due the day after each work day (ex: Tue work day to Wed due date).
+          </p>
+        </div>
+      ) : null}
+      {editing ? (
+        <div style={{ margin: '8px 0 6px' }}>
           <label className="muted">Attachments</label>
           <input
             type="file"
@@ -753,6 +769,7 @@ const TaskNodeView = ({
                 dueDate: dueDate || undefined,
                 startDate: startDate || undefined,
                 description: description.trim(),
+                workDays: workDays.length ? workDays : undefined,
                 attachments: uploaded
               });
               setEditing(false);
@@ -856,6 +873,7 @@ const TaskNodeView = ({
               <div className="task-meta" style={{ marginBottom: 12 }}>
                 {task.dueDate && <span className="badge">Due {task.dueDate}</span>}
                 {task.startDate && <span className="badge">Start {task.startDate}</span>}
+                {task.workDays?.length ? <span className="badge">Work days {formatWorkDays(task.workDays)}</span> : null}
                 <button
                   className={`badge badge-status status-${task.status || 'open'}`}
                   onClick={(e) => {
@@ -930,6 +948,7 @@ const TaskNodeView = ({
                       dueDate: dueDate || undefined,
                       startDate: startDate || undefined,
                       description: description.trim(),
+                      workDays: workDays.length ? workDays : undefined,
                       attachments
                     });
                     setEditing(false);
