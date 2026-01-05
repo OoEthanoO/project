@@ -198,9 +198,11 @@ const callAiProvider = async ({ messages, modelId, plugins }) => {
 
 export const generateSubtasks = async ({ task, ancestors = [], conversation = [], globalInstruction, modelId, clientLocalDate, clientTimeZone }) => {
   const supportsFilesFlag = supportsFiles(modelId);
-  // Use the later of task.startDate and today to avoid planning in the past
+  // Use the later of today's date and the effective start date (task start or root start).
   const todayDate = clientLocalDate ? new Date(clientLocalDate) : new Date();
-  const parsedStartDate = task.startDate ? new Date(task.startDate) : null;
+  const rootStartDate = ancestors.length ? ancestors[0]?.startDate : null;
+  const rawStartDate = task.startDate || rootStartDate;
+  const parsedStartDate = rawStartDate ? new Date(rawStartDate) : null;
   const hasValidStartDate = parsedStartDate && !Number.isNaN(parsedStartDate.getTime());
   const effectiveStartDate = hasValidStartDate && parsedStartDate > todayDate ? parsedStartDate : todayDate;
   const startDateText = formatDate(effectiveStartDate);
