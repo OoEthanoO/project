@@ -18,7 +18,7 @@ type Props = {
   balanceCents?: number;
 };
 
-type FlatTask = TaskNode & { depth: number; order: number; parentTitle?: string; ancestry: string[] };
+type FlatTask = TaskNode & { depth: number; order: number; parentTitle?: string; rootTitle: string; ancestry: string[] };
 
 const copyTextToClipboard = async (text: string) => {
   if (!text) return;
@@ -51,21 +51,25 @@ const flattenTasks = (
   depth = 0,
   orderRef = { value: 0 },
   parentTitle?: string,
-  ancestry: string[] = []
+  ancestry: string[] = [],
+  rootTitle?: string
 ): FlatTask[] => {
   return tasks.flatMap((t) => {
     const currentOrder = orderRef.value++;
     const nextAncestry = [...ancestry, t.id];
+    const normalizedTitle = t.title || '(untitled task)';
+    const nextRootTitle = rootTitle ?? normalizedTitle;
     const self: FlatTask = {
       ...t,
       parentId: t.parentId,
-      title: t.title || '(untitled task)',
+      title: normalizedTitle,
       depth,
       order: currentOrder,
       parentTitle,
+      rootTitle: nextRootTitle,
       ancestry: nextAncestry
     };
-    const children = flattenTasks(t.children || [], depth + 1, orderRef, t.title || '(untitled task)', nextAncestry);
+    const children = flattenTasks(t.children || [], depth + 1, orderRef, normalizedTitle, nextAncestry, nextRootTitle);
     return [self, ...children];
   });
 };
@@ -255,6 +259,12 @@ const ListItem = ({
     : !canSplit
       ? 'Due today or overdue; adjust due date before splitting.'
       : undefined;
+  const dueDateLabel = task.dueDate
+    ? task.startDate ? `${task.startDate} to ${task.dueDate}` : task.dueDate
+    : '';
+  const contextLine = [dueDateLabel, `Root: ${task.rootTitle}`, `Depth: ${task.depth}`]
+    .filter(Boolean)
+    .join(' · ');
 
   // Keep local edit buffers in sync when props change and we're not editing
   useEffect(() => {
@@ -515,11 +525,7 @@ const ListItem = ({
                   </span>
                 )}
               </div>
-              {task.dueDate && (
-                <span className="muted task-due-date">
-                  {task.startDate ? `${task.startDate} to ${task.dueDate}` : task.dueDate}
-                </span>
-              )}
+              <span className="muted task-due-date">{contextLine}</span>
               {task.workDays?.length ? (
                 <span className="muted task-work-days">Work days: {formatWorkDays(task.workDays)}</span>
               ) : null}
