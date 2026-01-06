@@ -225,9 +225,7 @@ const buildListViewText = (tasks: TaskNode[]) => {
   const flat = flattenTasksForList(tasks || []);
   const taskById = new Map(flat.map((task) => [task.id, task]));
   const taskComparator = compareListTasks(taskById);
-  const openAndProgress = flat.filter((t) => t.status !== 'done').sort(taskComparator);
-  const completed = flat.filter((t) => t.status === 'done').sort((a, b) => -taskComparator(a, b));
-  const sorted = [...openAndProgress, ...completed];
+  const sorted = flat.filter((t) => t.status !== 'done').sort(taskComparator);
 
   const lines: string[] = [];
   sorted.forEach((task) => {
