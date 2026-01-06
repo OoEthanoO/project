@@ -255,6 +255,7 @@ const ListItem = ({
   const [copySubmenuOpen, setCopySubmenuOpen] = useState(false);
   const copySubmenuCloseTimeoutRef = useRef<number | null>(null);
   const [isMobile, setIsMobile] = useState(false);
+  const [showMobileModal, setShowMobileModal] = useState(false);
   const isStartAfterDue = task.startDate && task.dueDate && task.startDate >= task.dueDate;
   const canSplit = !isDueTodayOrPast(task.dueDate, todayUtc) && !isStartAfterDue;
   const isDone = task.status === 'done';
@@ -436,6 +437,12 @@ const ListItem = ({
   return (
     <div
       className="task-card"
+      onClick={(e) => {
+        if (isMobile && !editing) {
+          e.stopPropagation();
+          setShowMobileModal(true);
+        }
+      }}
       onContextMenu={(e) => {
         if (!isMobile) {
           e.preventDefault();
@@ -658,6 +665,103 @@ const ListItem = ({
           </>
         )}
       </div>
+      {showMobileModal && isMobile && createPortal(
+        <div className="modal-backdrop" onClick={() => setShowMobileModal(false)}>
+          <div className="modal mobile-task-modal" onClick={(e) => e.stopPropagation()}>
+            <div style={{ marginBottom: 12 }}>
+              <p className="task-title" style={{ fontSize: 16, marginBottom: 8 }}>{task.title}</p>
+              {task.description && <p className="muted" style={{ fontSize: 13, marginBottom: 8 }}>{task.description}</p>}
+              <div className="task-meta" style={{ marginBottom: 12 }}>
+                {task.dueDate && <span className="badge">Due {task.dueDate}</span>}
+                {task.startDate && <span className="badge">Start {task.startDate}</span>}
+                {task.workDays?.length ? <span className="badge">Work days {formatWorkDays(task.workDays)}</span> : null}
+                <span className="badge">Root {task.rootTitle}</span>
+                <span className="badge">Depth {task.depth}</span>
+              </div>
+              <AttachmentList attachments={task.attachments} />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <button
+                className="primary"
+                onClick={() => {
+                  setShowMobileModal(false);
+                  onSplit(task.id);
+                }}
+                disabled={!hasMinBalance || !canSplit || isDone || planningIds?.has(task.id)}
+                title={splitDisabledReason}
+              >
+                {planningIds?.has(task.id) ? 'Planning…' : 'AI split'}
+              </button>
+              <button
+                className="secondary"
+                onClick={() => {
+                  setShowMobileModal(false);
+                  handleCopyTitle();
+                }}
+                disabled={!hasTitle}
+                title={!hasTitle ? 'No title to copy.' : 'Copy task name'}
+              >
+                Copy name
+              </button>
+              <button
+                className="secondary"
+                onClick={() => {
+                  setShowMobileModal(false);
+                  handleCopyDescription();
+                }}
+                disabled={!hasDescription}
+                title={!hasDescription ? 'No description to copy.' : 'Copy description'}
+              >
+                Copy description
+              </button>
+              <button
+                className="secondary"
+                onClick={() => {
+                  setShowMobileModal(false);
+                  handleCopyBoth();
+                }}
+                disabled={!hasTitle && !hasDescription}
+                title={!hasTitle && !hasDescription ? 'Nothing to copy.' : 'Copy name and description'}
+              >
+                Copy both
+              </button>
+              <button
+                className="secondary"
+                onClick={() => {
+                  if (!onShowInTree) return;
+                  setShowMobileModal(false);
+                  onShowInTree(task.id);
+                }}
+                disabled={!onShowInTree}
+              >
+                Show in tree
+              </button>
+              <button
+                className="secondary"
+                onClick={() => {
+                  setShowMobileModal(false);
+                  setEditing(true);
+                }}
+              >
+                Edit
+              </button>
+              <button
+                className="secondary"
+                onClick={() => {
+                  setShowMobileModal(false);
+                  onDelete(task.id);
+                }}
+              >
+                Delete
+              </button>
+              <button className="secondary" onClick={() => setShowMobileModal(false)}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
       {contextMenu && !isMobile && createPortal(
         <>
           <div
