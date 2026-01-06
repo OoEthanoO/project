@@ -28,6 +28,35 @@ const initialCoachMessage = () => ({
   createdAt: new Date().toISOString()
 });
 
+const pad2 = (value: number) => String(value).padStart(2, '0');
+const formatDateInput = (date: Date) => `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+const parseDateInput = (value?: string | null) => {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const match = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+  const utc = Date.UTC(year, month - 1, day);
+  const check = new Date(utc);
+  if (check.getUTCFullYear() !== year || check.getUTCMonth() !== month - 1 || check.getUTCDate() !== day) return null;
+  return { value: `${match[1]}-${match[2]}-${match[3]}`, utc };
+};
+const resolveTodayUtc = (override?: string | null) => {
+  const parsed = parseDateInput(override);
+  if (parsed) return parsed.utc;
+  const now = new Date();
+  return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+};
+const resolveClientLocalDate = (override?: string | null) => {
+  const parsed = parseDateInput(override);
+  if (parsed) return parsed.value;
+  return formatDateInput(new Date());
+};
+
 type OnboardingStep = {
   id: 'add-task' | 'create-task' | 'split-task' | 'settings';
   title: string;
@@ -49,16 +78,15 @@ type SavePayload = {
   };
 };
 
-const isDueTodayOrPast = (dueDate?: string) => {
+const isDueTodayOrPast = (dueDate?: string, todayUtc?: number) => {
   if (!dueDate) return false;
   const trimmed = dueDate.trim();
   if (!trimmed) return false;
   const [y, m, d] = trimmed.split('-').map((p) => parseInt(p, 10));
   const due = !Number.isNaN(y) && !Number.isNaN(m) && !Number.isNaN(d) ? Date.UTC(y, m - 1, d) : Date.parse(trimmed);
   if (Number.isNaN(due)) return false;
-  const now = new Date();
-  const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-  return due <= todayUtc;
+  const resolvedTodayUtc = typeof todayUtc === 'number' ? todayUtc : resolveTodayUtc(null);
+  return due <= resolvedTodayUtc;
 };
 
 const copyTextToClipboard = async (text: string) => {
@@ -170,7 +198,8 @@ const App = () => {
   const onboardingTooltipRef = useRef<HTMLDivElement | null>(null);
   const [onboardingTooltipHeight, setOnboardingTooltipHeight] = useState(0);
   const [lastCreatedTaskId, setLastCreatedTaskId] = useState<string | null>(null);
-  const [settingsView, setSettingsView] = useState<'main' | 'backup'>('main');
+  const [settingsView, setSettingsView] = useState<'main' | 'backup' | 'advanced'>('main');
+  const [todayOverride, setTodayOverride] = useState<string | null>(null);
   const [isMobile, setIsMobile] = useState(() => {
     if (typeof window === 'undefined') return false;
     return window.matchMedia('(max-width: 768px)').matches;
@@ -199,6 +228,8 @@ const App = () => {
   const [modelId, setModelId] = useState(defaultModel);
   const currentModel = getModelById(modelId);
   const hasMinBalance = balanceCents >= 50;
+  const todayUtc = useMemo(() => resolveTodayUtc(todayOverride), [todayOverride]);
+  const clientLocalDate = useMemo(() => resolveClientLocalDate(todayOverride), [todayOverride]);
   const latestStateRef = useRef({
     tasks,
     trash,
@@ -212,6 +243,22 @@ const App = () => {
   const balanceDeltaStyle = { '--balance-delta-delay': `${BALANCE_DELTA_PAUSE_MS}ms` } as CSSProperties;
   const copyResetRef = useRef<number | null>(null);
   const [panelContextMenu, setPanelContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const saveTodayOverride = (next: string | null) => {
+    const parsed = parseDateInput(next);
+    const value = parsed ? parsed.value : null;
+    setTodayOverride(value);
+    if (!user) return;
+    const key = `yanplanner_today_override_${user.id}`;
+    try {
+      if (value) {
+        localStorage.setItem(key, value);
+      } else {
+        localStorage.removeItem(key);
+      }
+    } catch (err) {
+      console.error('Failed to save date override', err);
+    }
+  };
   const clearBalanceDelta = () => {
     if (balanceDeltaTimeoutRef.current) {
       window.clearTimeout(balanceDeltaTimeoutRef.current);
@@ -338,10 +385,6 @@ const App = () => {
     e.preventDefault();
     e.stopPropagation();
   };
-  const formatDateInput = (date: Date) => {
-    const pad = (value: number) => String(value).padStart(2, '0');
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-  };
   const createSampleTask = (): TaskNode => {
     const dueDate = new Date();
     dueDate.setDate(dueDate.getDate() + 7);
@@ -452,6 +495,29 @@ const App = () => {
     }
     return undefined;
   }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setTodayOverride(null);
+      return;
+    }
+    const key = `yanplanner_today_override_${user.id}`;
+    try {
+      const stored = localStorage.getItem(key);
+      const parsed = parseDateInput(stored);
+      if (parsed) {
+        setTodayOverride(parsed.value);
+      } else {
+        setTodayOverride(null);
+        if (stored) {
+          localStorage.removeItem(key);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load date override', err);
+      setTodayOverride(null);
+    }
+  }, [user?.id]);
 
   useEffect(() => {
     if (!panelContextMenu) return;
@@ -1204,7 +1270,7 @@ const App = () => {
       return;
     }
     const balanceBeforeSplit = balanceCentsRef.current;
-    if (isDueTodayOrPast(task.dueDate)) {
+    if (isDueTodayOrPast(task.dueDate, todayUtc)) {
       setMessages((prev) => [
         ...prev,
         {
@@ -1225,7 +1291,15 @@ const App = () => {
     splitRequestRef.current.set(id, splitToken);
     try {
       const ancestors = getAncestors(tasks, id);
-      const subtasks = await generateSubtasks({ task, ancestors, conversation: messages, globalInstruction, modelId, userId: user.id });
+      const subtasks = await generateSubtasks({
+        task,
+        ancestors,
+        conversation: messages,
+        globalInstruction,
+        modelId,
+        userId: user.id,
+        clientLocalDate
+      });
       if (splitRequestRef.current.get(id) !== splitToken) return;
       lastUserActionRef.current = Date.now();
       setTasks((prev) =>
@@ -1282,7 +1356,7 @@ const App = () => {
     setMessages((prev) => [...prev, userMsg]);
     setChatting(true);
     try {
-      const aiMessage = await chatWithPlanner(text, tasks, globalInstruction, null, modelId, user.id);
+      const aiMessage = await chatWithPlanner(text, tasks, globalInstruction, null, modelId, user.id, clientLocalDate);
       setMessages((prev) => [...prev, aiMessage]);
       // Persist chat immediately to reduce chance of losing the last response
       const baseMessages = latestStateRef.current.messages;
@@ -1312,11 +1386,62 @@ const App = () => {
     enqueueSave({ chat: clearedMessages });
   };
 
+  const openAdvancedSettings = () => {
+    setSettingsView('advanced');
+    if (isMobile) {
+      setActiveTab('settings');
+    } else {
+      setShowSettingsModal(true);
+    }
+  };
+
   const renderSettingsContent = (onDone: () => void) => {
     const closeSettings = () => {
       setSettingsView('main');
       onDone();
     };
+
+    if (settingsView === 'advanced') {
+      const deviceLocalDate = formatDateInput(new Date());
+      return (
+        <>
+          <p className="task-title">Advanced settings</p>
+          <p className="muted">Power controls for fine-tuning this client.</p>
+          <div style={{ marginBottom: 'var(--space-xl)' }}>
+            <p style={{ fontWeight: 600, marginBottom: 'var(--space-sm)' }}>Override today&apos;s date</p>
+            <p className="muted" style={{ marginBottom: 'var(--space-sm)' }}>
+              Changes the date used for due checks and AI planning on this device.
+            </p>
+            {todayOverride ? (
+              <div className="override-banner" role="status">
+                <strong>Date override active</strong>
+                <span>Today is set to {todayOverride} on this device.</span>
+              </div>
+            ) : (
+              <p className="muted" style={{ fontSize: 12, marginBottom: 'var(--space-sm)' }}>
+                Using device date ({deviceLocalDate}).
+              </p>
+            )}
+            <label className="muted">Override date</label>
+            <input
+              type="date"
+              value={todayOverride ?? ''}
+              onChange={(e) => saveTodayOverride(e.target.value || null)}
+            />
+            <div className="task-actions" style={{ marginTop: 12 }}>
+              <button className="secondary" onClick={() => saveTodayOverride(null)} disabled={!todayOverride}>
+                Clear override
+              </button>
+            </div>
+          </div>
+          <div className="task-actions">
+            <button className="secondary" onClick={() => setSettingsView('main')}>
+              ← Back
+            </button>
+          </div>
+        </>
+      );
+    }
 
     if (settingsView === 'backup' && backupAvailable) {
       return (
@@ -1449,6 +1574,22 @@ const App = () => {
         )}
 
         <div style={{ marginBottom: 'var(--space-xl)' }}>
+          <p style={{ fontWeight: 600, marginBottom: 'var(--space-sm)' }}>Advanced settings</p>
+          <p className="muted" style={{ marginBottom: 'var(--space-sm)' }}>
+            Power options for testing and diagnostics.
+          </p>
+          {todayOverride && (
+            <div className="override-banner" role="status">
+              <strong>Date override active</strong>
+              <span>Today is set to {todayOverride} on this device.</span>
+            </div>
+          )}
+          <button className="secondary" onClick={() => setSettingsView('advanced')}>
+            🧪 Open advanced settings
+          </button>
+        </div>
+
+        <div style={{ marginBottom: 'var(--space-xl)' }}>
           <p style={{ fontWeight: 600, marginBottom: 'var(--space-sm)' }}>About</p>
           <div className="settings-about">
             <div className="settings-about-row">
@@ -1470,13 +1611,6 @@ const App = () => {
           </div>
         </div>
 
-        {!isMobile && (
-          <div className="task-actions">
-            <button className="primary" onClick={closeSettings}>
-              Done
-            </button>
-          </div>
-        )}
       </>
     );
   };
@@ -1637,7 +1771,7 @@ const App = () => {
             title={`Signed in as ${user?.email || 'unknown'}. Click for options.`}
             onClick={(e) => {
               e.stopPropagation();
-              setShowAccountDropdown(!showAccountDropdown);
+              setShowAccountDropdown((prev) => !prev);
             }}
           >
             <span role="img" aria-label="profile">👤</span>
@@ -1661,6 +1795,17 @@ const App = () => {
           </div>
         </div>
       </div>
+      {todayOverride && (
+        <div className="override-banner app-override-banner" role="status">
+          <div className="override-banner-text">
+            <strong>Date override active</strong>
+            <span>Today is set to {todayOverride} on this device.</span>
+          </div>
+          <button className="secondary" onClick={openAdvancedSettings}>
+            Manage
+          </button>
+        </div>
+      )}
 
       {/* Main content area with sidebar */}
       <div className={`app-content ${showChat ? 'with-chat-sidebar' : ''}`}>
@@ -1801,6 +1946,7 @@ const App = () => {
               }}
               userId={user?.id}
               balanceCents={balanceCents}
+              todayUtc={todayUtc}
               onboardingSplitTaskId={showOnboarding ? onboardingSplitTaskId : null}
               onboardingShowSplit={onboardingIsSplitStep}
               onClearAiSubtasks={handleClearAiSubtasks}
@@ -1823,6 +1969,7 @@ const App = () => {
               onEditModeChange={setIsEditingTask}
               userId={user?.id}
               balanceCents={balanceCents}
+              todayUtc={todayUtc}
             />
           )
         ) : activeTab === 'trash' ? (
@@ -1989,7 +2136,7 @@ const App = () => {
       )}
       {showSettingsModal && (
         <div className="modal-backdrop" onClick={() => setShowSettingsModal(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640 }}>
+          <div className="modal settings-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640 }}>
             {renderSettingsContent(() => setShowSettingsModal(false))}
           </div>
         </div>

@@ -16,6 +16,7 @@ type Props = {
   onEditModeChange?: (isEditing: boolean) => void;
   userId?: string;
   balanceCents?: number;
+  todayUtc?: number;
 };
 
 type FlatTask = TaskNode & { depth: number; order: number; parentTitle?: string; rootTitle: string; ancestry: string[] };
@@ -133,15 +134,18 @@ const compareTasks = (taskById: Map<string, FlatTask>) => (a: FlatTask, b: FlatT
   return a.order - b.order;
 };
 
-const isDueTodayOrPast = (dueDate?: string) => {
+const isDueTodayOrPast = (dueDate?: string, todayUtc?: number) => {
   if (!dueDate) return false;
   const trimmed = dueDate.trim();
   if (!trimmed) return false;
   const [y, m, d] = trimmed.split('-').map((p) => parseInt(p, 10));
   const due = !Number.isNaN(y) && !Number.isNaN(m) && !Number.isNaN(d) ? Date.UTC(y, m - 1, d) : Date.parse(trimmed);
   if (Number.isNaN(due)) return false;
-  const now = new Date();
-  const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  if (typeof todayUtc !== 'number') {
+    const now = new Date();
+    const fallbackUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+    return due <= fallbackUtc;
+  }
   return due <= todayUtc;
 };
 
@@ -185,7 +189,7 @@ const uploadPendingAttachments = async (attachments: Attachment[], userId?: stri
   );
 };
 
-const SimpleListView = ({ tasks, onSplit, onDelete, onUpdate, planningIds = new Set(), onEditModeChange, userId, balanceCents }: Props) => {
+const SimpleListView = ({ tasks, onSplit, onDelete, onUpdate, planningIds = new Set(), onEditModeChange, userId, balanceCents, todayUtc }: Props) => {
   const flat = flattenTasks(tasks || []);
   const taskById = new Map(flat.map((task) => [task.id, task]));
   const taskComparator = compareTasks(taskById);
@@ -206,6 +210,7 @@ const SimpleListView = ({ tasks, onSplit, onDelete, onUpdate, planningIds = new 
           onEditModeChange={onEditModeChange}
           userId={userId}
           balanceCents={balanceCents}
+          todayUtc={todayUtc}
         />
       ))}
     </div>
@@ -220,7 +225,8 @@ const ListItem = ({
   planningIds,
   onEditModeChange,
   userId,
-  balanceCents
+  balanceCents,
+  todayUtc
 }: {
   task: FlatTask;
   onSplit: (id: string) => void;
@@ -230,6 +236,7 @@ const ListItem = ({
   onEditModeChange?: (isEditing: boolean) => void;
   userId?: string;
   balanceCents?: number;
+  todayUtc?: number;
 }) => {
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(task.title);
@@ -245,7 +252,7 @@ const ListItem = ({
   const copySubmenuCloseTimeoutRef = useRef<number | null>(null);
   const [isMobile, setIsMobile] = useState(false);
   const isStartAfterDue = task.startDate && task.dueDate && task.startDate >= task.dueDate;
-  const canSplit = !isDueTodayOrPast(task.dueDate) && !isStartAfterDue;
+  const canSplit = !isDueTodayOrPast(task.dueDate, todayUtc) && !isStartAfterDue;
   const isDone = task.status === 'done';
   const showMenuButton = !isMobile && !editing;
   const isSplitting = planningIds?.has(task.id);

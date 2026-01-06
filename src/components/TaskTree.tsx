@@ -21,6 +21,7 @@ type Props = {
   onToggleCollapsed?: (id: string) => void;
   userId?: string;
   balanceCents?: number;
+  todayUtc?: number;
   onboardingSplitTaskId?: string | null;
   onboardingShowSplit?: boolean;
   onClearAiSubtasks?: (parentId: string) => void;
@@ -105,6 +106,7 @@ const TaskTree = ({
   onToggleCollapsed,
   userId,
   balanceCents,
+  todayUtc,
   onboardingSplitTaskId,
   onboardingShowSplit,
   onClearAiSubtasks
@@ -133,6 +135,7 @@ const TaskTree = ({
           onToggleCollapsed={onToggleCollapsed}
           userId={userId}
           balanceCents={balanceCents}
+          todayUtc={todayUtc}
           onboardingSplitTaskId={onboardingSplitTaskId}
           onboardingShowSplit={onboardingShowSplit}
           onClearAiSubtasks={onClearAiSubtasks}
@@ -147,7 +150,7 @@ const TaskTree = ({
   );
 };
 
-const isDueTodayOrPast = (dueDate?: string) => {
+const isDueTodayOrPast = (dueDate?: string, todayUtc?: number) => {
   if (!dueDate) return false;
   const trimmed = dueDate.trim();
   if (!trimmed) return false;
@@ -155,8 +158,11 @@ const isDueTodayOrPast = (dueDate?: string) => {
   const [y, m, d] = trimmed.split('-').map((p) => parseInt(p, 10));
   const due = !Number.isNaN(y) && !Number.isNaN(m) && !Number.isNaN(d) ? Date.UTC(y, m - 1, d) : Date.parse(trimmed);
   if (Number.isNaN(due)) return false;
-  const now = new Date();
-  const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  if (typeof todayUtc !== 'number') {
+    const now = new Date();
+    const fallbackUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+    return due <= fallbackUtc;
+  }
   return due <= todayUtc;
 };
 
@@ -183,7 +189,8 @@ const TaskNodeView = ({
   allTasks,
   onboardingSplitTaskId,
   onboardingShowSplit,
-  onClearAiSubtasks
+  onClearAiSubtasks,
+  todayUtc
 }: {
   task: TaskNode;
   depth: number;
@@ -208,6 +215,7 @@ const TaskNodeView = ({
   onboardingSplitTaskId?: string | null;
   onboardingShowSplit?: boolean;
   onClearAiSubtasks?: (parentId: string) => void;
+  todayUtc?: number;
 }) => {
   const [showSubForm, setShowSubForm] = useState(false);
   const [showMobileModal, setShowMobileModal] = useState(false);
@@ -217,7 +225,7 @@ const TaskNodeView = ({
   const [isMobile, setIsMobile] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement | null>(null);
   const isStartAfterDue = task.startDate && task.dueDate && task.startDate >= task.dueDate;
-  const canSplit = !isDueTodayOrPast(task.dueDate) && !isStartAfterDue;
+  const canSplit = !isDueTodayOrPast(task.dueDate, todayUtc) && !isStartAfterDue;
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(task.title);
   const [dueDate, setDueDate] = useState(task.dueDate || '');
