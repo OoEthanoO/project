@@ -78,6 +78,13 @@ type SavePayload = {
   };
 };
 
+type FlatListTask = TaskNode & {
+  depth: number;
+  order: number;
+  rootTitle: string;
+  ancestry: string[];
+};
+
 const isDueTodayOrPast = (dueDate?: string, todayUtc?: number) => {
   if (!dueDate) return false;
   const trimmed = dueDate.trim();
@@ -151,6 +158,108 @@ const buildTaskListText = (tasks: TaskNode[]) => {
   return lines.join('\n');
 };
 
+const flattenTasksForList = (
+  tasks: TaskNode[],
+  depth = 0,
+  orderRef = { value: 0 },
+  ancestry: string[] = [],
+  rootTitle?: string
+): FlatListTask[] => {
+  return (tasks || []).flatMap((task) => {
+    const currentOrder = orderRef.value++;
+    const normalizedTitle = task.title?.trim() || '(untitled task)';
+    const nextAncestry = [...ancestry, task.id];
+    const nextRootTitle = rootTitle ?? normalizedTitle;
+    const self: FlatListTask = {
+      ...task,
+      title: normalizedTitle,
+      depth,
+      order: currentOrder,
+      rootTitle: nextRootTitle,
+      ancestry: nextAncestry
+    };
+    const children = flattenTasksForList(task.children || [], depth + 1, orderRef, nextAncestry, nextRootTitle);
+    return [self, ...children];
+  });
+};
+
+const compareAssociatedDueDate = (a: FlatListTask, b: FlatListTask, taskById: Map<string, FlatListTask>) => {
+  const rootA = taskById.get(a.ancestry[0]);
+  const rootB = taskById.get(b.ancestry[0]);
+  const dueA = rootA?.dueDate;
+  const dueB = rootB?.dueDate;
+  if (!dueA && !dueB) return 0;
+  if (!dueA) return 1;
+  if (!dueB) return -1;
+  return dueA.localeCompare(dueB);
+};
+
+const compareRootPlacements = (a: FlatListTask, b: FlatListTask, taskById: Map<string, FlatListTask>) => {
+  const minLength = Math.min(a.ancestry.length, b.ancestry.length);
+  for (let i = 0; i < minLength; i += 1) {
+    const taskA = taskById.get(a.ancestry[i]);
+    const taskB = taskById.get(b.ancestry[i]);
+    if (!taskA || !taskB) return null;
+    if (taskA.order !== taskB.order) return taskA.order - taskB.order;
+  }
+  return null;
+};
+
+const compareListTasks = (taskById: Map<string, FlatListTask>) => (a: FlatListTask, b: FlatListTask) => {
+  if (!a.dueDate && !b.dueDate) {
+    return a.order - b.order;
+  }
+  if (!a.dueDate) return 1;
+  if (!b.dueDate) return -1;
+  const dueCmp = a.dueDate.localeCompare(b.dueDate);
+  if (dueCmp !== 0) return dueCmp;
+  const associatedDueCmp = compareAssociatedDueDate(a, b, taskById);
+  if (associatedDueCmp !== 0) return associatedDueCmp;
+  const rootPlacementCmp = compareRootPlacements(a, b, taskById);
+  if (rootPlacementCmp !== null) return rootPlacementCmp;
+  if (a.depth !== b.depth) return b.depth - a.depth;
+  return a.order - b.order;
+};
+
+const buildListViewText = (tasks: TaskNode[]) => {
+  const flat = flattenTasksForList(tasks || []);
+  const taskById = new Map(flat.map((task) => [task.id, task]));
+  const taskComparator = compareListTasks(taskById);
+  const openAndProgress = flat.filter((t) => t.status !== 'done').sort(taskComparator);
+  const completed = flat.filter((t) => t.status === 'done').sort((a, b) => -taskComparator(a, b));
+  const sorted = [...openAndProgress, ...completed];
+
+  const lines: string[] = [];
+  sorted.forEach((task) => {
+    const statusMark = task.status === 'done' ? '[x]' : task.status === 'in-progress' ? '[-]' : '[ ]';
+    const metaParts: string[] = [];
+    const dueLabel = task.dueDate
+      ? task.startDate ? `${task.startDate} to ${task.dueDate}` : task.dueDate
+      : '';
+    if (dueLabel) metaParts.push(dueLabel);
+    metaParts.push(`Root: ${task.rootTitle}`);
+    metaParts.push(`Depth: ${task.depth}`);
+    if (task.workDays?.length) metaParts.push(`Work days: ${formatWorkDays(task.workDays)}`);
+    const attachmentCount = task.attachments?.length ?? 0;
+    if (attachmentCount > 0) {
+      metaParts.push(`${attachmentCount} attachment${attachmentCount === 1 ? '' : 's'}`);
+    }
+    if (task.createdBy === 'ai') metaParts.push('AI');
+    const metaText = metaParts.length ? ` (${metaParts.join(', ')})` : '';
+    lines.push(`- ${statusMark} ${task.title}${metaText}`);
+    const description = (task.description || '').trim();
+    if (description) {
+      const formatted = description.replace(/\r?\n/g, '\n  ');
+      lines.push(`  notes: ${formatted}`);
+    }
+    if (task.attachments?.length) {
+      const names = task.attachments.map((a) => a.name || a.type || 'file').join(', ');
+      lines.push(`  attachments: ${names}`);
+    }
+  });
+  return lines.join('\n');
+};
+
 const collectCollapsibleTaskIds = (taskList: TaskNode[]) => {
   const ids: string[] = [];
   const walk = (list: TaskNode[]) => {
@@ -191,7 +300,6 @@ const App = () => {
   const [isEditingTask, setIsEditingTask] = useState(false); // Track if any task is in edit mode
   const [backupAvailable, setBackupAvailable] = useState<any>(null); // Track if backup exists
   const [showAccountDropdown, setShowAccountDropdown] = useState(false);
-  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'error'>('idle');
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState(0);
   const [onboardingTargetRect, setOnboardingTargetRect] = useState<DOMRect | null>(null);
@@ -222,6 +330,7 @@ const App = () => {
   const mobileFabRef = useRef<HTMLButtonElement | null>(null);
   const settingsButtonRef = useRef<HTMLButtonElement | null>(null);
   const mobileSettingsTabRef = useRef<HTMLButtonElement | null>(null);
+  const panelContentRef = useRef<HTMLDivElement | null>(null);
 
   const [globalInstruction, setGlobalInstruction] = useState('');
   const defaultModel = getDefaultModel().id;
@@ -241,8 +350,10 @@ const App = () => {
   const BALANCE_DELTA_PAUSE_MS = 3000;
   const formatCurrency = (cents: number) => `$${(cents / 100).toFixed(2)}`;
   const balanceDeltaStyle = { '--balance-delta-delay': `${BALANCE_DELTA_PAUSE_MS}ms` } as CSSProperties;
-  const copyResetRef = useRef<number | null>(null);
-  const [panelContextMenu, setPanelContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [panelContextMenu, setPanelContextMenu] = useState<{ x: number; y: number; view: 'tree' | 'list' } | null>(null);
+  const [treeFocusRequest, setTreeFocusRequest] = useState<{ id: string; token: number } | null>(null);
+  const [highlightedTaskId, setHighlightedTaskId] = useState<string | null>(null);
+  const highlightTimeoutRef = useRef<number | null>(null);
   const saveTodayOverride = (next: string | null) => {
     const parsed = parseDateInput(next);
     const value = parsed ? parsed.value : null;
@@ -604,9 +715,72 @@ const App = () => {
     }
   }, [showOnboarding, onboardingStep, currentOnboarding, tasks.length, onboardingTooltipHeight, isMobile]);
 
+  const scrollTaskIntoView = (taskId: string) => {
+    const container = panelContentRef.current;
+    if (!container) return false;
+    const target = container.querySelector(`[data-task-id="${taskId}"]`) as HTMLElement | null;
+    if (!target) return false;
+    const containerRect = container.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    const offsetTop = targetRect.top - containerRect.top;
+    const desiredTop = container.scrollTop + offsetTop - containerRect.height / 2 + targetRect.height / 2;
+    const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
+    const clampedTop = Math.max(0, Math.min(desiredTop, maxScroll));
+    container.scrollTo({ top: clampedTop, behavior: 'smooth' });
+    return true;
+  };
+
+  const handleShowInTree = (id: string) => {
+    const task = findTask(tasks, id);
+    if (!task) return;
+    const ancestors = getAncestors(tasks, id);
+    if (ancestors.length) {
+      lastUserActionRef.current = Date.now();
+      setCollapsedTaskIds((prev) => {
+        const next = new Set(prev);
+        ancestors.forEach((ancestor) => next.delete(ancestor.id));
+        return next;
+      });
+    }
+    setActiveTab('tree');
+    setTreeFocusRequest({ id, token: Date.now() });
+  };
+
   useEffect(() => {
     setPanelContextMenu(null);
   }, [activeTab]);
+
+  useEffect(() => {
+    if (!treeFocusRequest || activeTab !== 'tree') return;
+    let cancelled = false;
+    let attempts = 0;
+    const maxAttempts = 8;
+
+    const attemptScroll = () => {
+      if (cancelled) return;
+      const found = scrollTaskIntoView(treeFocusRequest.id);
+      if (found) {
+        setHighlightedTaskId(treeFocusRequest.id);
+        if (highlightTimeoutRef.current) {
+          window.clearTimeout(highlightTimeoutRef.current);
+        }
+        highlightTimeoutRef.current = window.setTimeout(() => {
+          setHighlightedTaskId((current) => (current === treeFocusRequest.id ? null : current));
+          highlightTimeoutRef.current = null;
+        }, 1600);
+        return;
+      }
+      attempts += 1;
+      if (attempts <= maxAttempts) {
+        window.setTimeout(attemptScroll, 120);
+      }
+    };
+
+    window.requestAnimationFrame(attemptScroll);
+    return () => {
+      cancelled = true;
+    };
+  }, [treeFocusRequest, activeTab]);
 
   useEffect(() => {
     if (activeTab !== 'settings') {
@@ -1114,29 +1288,20 @@ const App = () => {
     };
   }, [tasks]);
 
-  const handleCopyTasks = async () => {
-    const text = buildTaskListText(tasks);
+  const handleCopyTasks = async (view: 'tree' | 'list') => {
+    const text = view === 'list' ? buildListViewText(tasks) : buildTaskListText(tasks);
     if (!text.trim()) return;
     try {
       await copyTextToClipboard(text);
-      setCopyState('copied');
     } catch (err) {
       console.error('Copy tasks failed', err);
-      setCopyState('error');
     }
-    if (copyResetRef.current) {
-      window.clearTimeout(copyResetRef.current);
-    }
-    copyResetRef.current = window.setTimeout(() => {
-      setCopyState('idle');
-      copyResetRef.current = null;
-    }, 1800);
   };
 
   useEffect(() => {
     return () => {
-      if (copyResetRef.current) {
-        window.clearTimeout(copyResetRef.current);
+      if (highlightTimeoutRef.current) {
+        window.clearTimeout(highlightTimeoutRef.current);
       }
     };
   }, []);
@@ -1865,23 +2030,6 @@ const App = () => {
           
           {/* Settings at bottom */}
           <div className="sidebar-section" style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <button
-              className="secondary"
-              onClick={handleCopyTasks}
-              disabled={stats.total === 0}
-              title={
-                stats.total === 0
-                  ? 'No tasks to copy.'
-                  : copyState === 'copied'
-                    ? 'Copied!'
-                    : copyState === 'error'
-                      ? 'Copy failed. Try again.'
-                      : 'Copy all tasks to clipboard.'
-              }
-              style={{ width: '100%', justifyContent: 'center' }}
-            >
-              {copyState === 'copied' ? '✅ Copied' : copyState === 'error' ? '⚠️ Copy failed' : '📋 Copy tasks'}
-            </button>
             <button 
               className="secondary" 
               ref={settingsButtonRef}
@@ -1900,17 +2048,17 @@ const App = () => {
         <div
           className="panel"
           onContextMenu={(e) => {
-            if (activeTab !== 'tree') return;
+            if (activeTab !== 'tree' && activeTab !== 'list') return;
             const target = e.target as HTMLElement | null;
             if (target && (target.closest('input, textarea, select, button') || target.closest('.task-card'))) {
               return;
             }
             e.preventDefault();
-            setPanelContextMenu({ x: e.clientX, y: e.clientY });
+            setPanelContextMenu({ x: e.clientX, y: e.clientY, view: activeTab });
           }}
         >
           {/* Scrollable content area */}
-          <div className="panel-content">
+          <div className="panel-content" ref={panelContentRef}>
         {activeTab === 'tree' ? (
           showEmptyTasks ? (
             emptyTasksState
@@ -1944,6 +2092,7 @@ const App = () => {
                   return next;
                 });
               }}
+              highlightedTaskId={highlightedTaskId}
               userId={user?.id}
               balanceCents={balanceCents}
               todayUtc={todayUtc}
@@ -1967,6 +2116,7 @@ const App = () => {
               onUpdate={handleUpdateTask}
               planningIds={planningIds}
               onEditModeChange={setIsEditingTask}
+              onShowInTree={handleShowInTree}
               userId={user?.id}
               balanceCents={balanceCents}
               todayUtc={todayUtc}
@@ -2006,7 +2156,7 @@ const App = () => {
         )}
       </div> {/* End app-content */}
 
-      {panelContextMenu && activeTab === 'tree' && createPortal(
+      {panelContextMenu && createPortal(
         <>
           <div className="context-menu-backdrop" onClick={() => setPanelContextMenu(null)} />
           <div
@@ -2014,20 +2164,33 @@ const App = () => {
             style={{
               position: 'fixed',
               left: `${Math.min(panelContextMenu.x, window.innerWidth - 220)}px`,
-              top: `${Math.min(panelContextMenu.y, window.innerHeight - 120)}px`
+              top: `${Math.min(panelContextMenu.y, window.innerHeight - 140)}px`
             }}
             onClick={(e) => e.stopPropagation()}
           >
+            {panelContextMenu.view === 'tree' && (
+              <button
+                className="context-menu-item"
+                onClick={() => {
+                  setPanelContextMenu(null);
+                  collapseAllTasks();
+                }}
+                disabled={tasks.length === 0}
+                title={tasks.length === 0 ? 'No tasks to collapse.' : 'Collapse all tasks in the tree view'}
+              >
+                Collapse all tasks
+              </button>
+            )}
             <button
               className="context-menu-item"
               onClick={() => {
                 setPanelContextMenu(null);
-                collapseAllTasks();
+                handleCopyTasks(panelContextMenu.view);
               }}
-              disabled={tasks.length === 0}
-              title={tasks.length === 0 ? 'No tasks to collapse.' : 'Collapse all tasks in the tree view'}
+              disabled={stats.total === 0}
+              title={stats.total === 0 ? 'No tasks to copy.' : 'Copy tasks to clipboard.'}
             >
-              Collapse all tasks
+              📋 Copy tasks
             </button>
           </div>
         </>,

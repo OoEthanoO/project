@@ -19,6 +19,7 @@ type Props = {
   onEditModeChange?: (isEditing: boolean) => void;
   collapsedIds?: Set<string>;
   onToggleCollapsed?: (id: string) => void;
+  highlightedTaskId?: string | null;
   userId?: string;
   balanceCents?: number;
   todayUtc?: number;
@@ -104,6 +105,7 @@ const TaskTree = ({
   onEditModeChange,
   collapsedIds = new Set(),
   onToggleCollapsed,
+  highlightedTaskId,
   userId,
   balanceCents,
   todayUtc,
@@ -133,6 +135,7 @@ const TaskTree = ({
           onEditModeChange={onEditModeChange}
           collapsedIds={collapsedIds}
           onToggleCollapsed={onToggleCollapsed}
+          highlightedTaskId={highlightedTaskId}
           userId={userId}
           balanceCents={balanceCents}
           todayUtc={todayUtc}
@@ -180,6 +183,7 @@ const TaskNodeView = ({
   onEditModeChange,
   collapsedIds,
   onToggleCollapsed,
+  highlightedTaskId,
   userId,
   balanceCents,
   draggedTaskId,
@@ -205,6 +209,7 @@ const TaskNodeView = ({
   onEditModeChange?: (isEditing: boolean) => void;
   collapsedIds?: Set<string>;
   onToggleCollapsed?: (id: string) => void;
+  highlightedTaskId?: string | null;
   userId?: string;
   balanceCents?: number;
   draggedTaskId: string | null;
@@ -243,6 +248,7 @@ const TaskNodeView = ({
   const showMenuButton = !isMobile && !editing;
   const isOnboardingSplitTarget = onboardingSplitTaskId === task.id;
   const isSplitting = planningIds?.has(task.id);
+  const isHighlighted = highlightedTaskId === task.id;
   const titleText = task.title?.trim() ?? '';
   const hasTitle = titleText.length > 0;
   const descriptionText = task.description?.trim() ?? '';
@@ -358,6 +364,32 @@ const TaskNodeView = ({
     setAttachError('');
     const extracted = await Promise.all(incoming.map((file) => extractAttachment(file, userId)));
     setAttachments((prev) => [...prev, ...(extracted as Attachment[])]);
+  };
+
+  const handleSave = async () => {
+    setIsUploading(true);
+    const uploaded = await uploadPendingAttachments(attachments, userId);
+    setIsUploading(false);
+    onUpdate(task.id, {
+      title: title.trim() || '(untitled)',
+      dueDate: dueDate || undefined,
+      startDate: startDate || undefined,
+      description: description.trim(),
+      workDays: workDays.length ? workDays : undefined,
+      attachments: uploaded
+    });
+    setEditing(false);
+  };
+
+  const handleCancel = () => {
+    setTitle(task.title);
+    setDueDate(task.dueDate || '');
+    setStartDate(task.startDate || '');
+    setDescription(task.description || '');
+    setWorkDays(task.workDays || []);
+    setAttachments(task.attachments || []);
+    setAttachError('');
+    setEditing(false);
   };
 
   useEffect(() => {
@@ -526,8 +558,9 @@ const TaskNodeView = ({
 
   return (
     <div
-      className={`task-card ${isDragging ? 'dragging' : ''} ${isDragOver ? 'drag-over' : ''}`}
+      className={`task-card ${isDragging ? 'dragging' : ''} ${isDragOver ? 'drag-over' : ''} ${isHighlighted ? 'tree-highlight' : ''}`}
       style={{ marginLeft: depth === 0 ? 0 : depth * 12 }}
+      data-task-id={task.id}
       draggable={!editing && !isMobile}
       onDragStart={handleDragStart}
       onDragOver={handleDragOver}
@@ -766,26 +799,14 @@ const TaskNodeView = ({
       )}
       <div className="task-actions" style={editing ? { display: 'flex' } : undefined}>
         {editing ? (
-          <button
-            className="primary"
-            onClick={async () => {
-              setIsUploading(true);
-              const uploaded = await uploadPendingAttachments(attachments, userId);
-              setIsUploading(false);
-              onUpdate(task.id, {
-                title: title.trim() || '(untitled)',
-                dueDate: dueDate || undefined,
-                startDate: startDate || undefined,
-                description: description.trim(),
-                workDays: workDays.length ? workDays : undefined,
-                attachments: uploaded
-              });
-              setEditing(false);
-            }}
-            disabled={isUploading}
-          >
-            {isUploading ? 'Saving...' : 'Save'}
-          </button>
+          <>
+            <button className="primary" onClick={handleSave} disabled={isUploading}>
+              {isUploading ? 'Saving...' : 'Save'}
+            </button>
+            <button className="secondary" onClick={handleCancel} disabled={isUploading}>
+              Cancel
+            </button>
+          </>
         ) : (
           <>
             <button
@@ -856,6 +877,7 @@ const TaskNodeView = ({
               onEditModeChange={onEditModeChange}
               collapsedIds={collapsedIds}
               onToggleCollapsed={onToggleCollapsed}
+              highlightedTaskId={highlightedTaskId}
               userId={userId}
               balanceCents={balanceCents}
               draggedTaskId={draggedTaskId}
@@ -948,23 +970,28 @@ const TaskNodeView = ({
                 Add subtask
               </button>
               {editing ? (
-                <button 
-                  className="primary" 
-                  onClick={() => {
-                    onUpdate(task.id, {
-                      title: title.trim() || '(untitled)',
-                      dueDate: dueDate || undefined,
-                      startDate: startDate || undefined,
-                      description: description.trim(),
-                      workDays: workDays.length ? workDays : undefined,
-                      attachments
-                    });
-                    setEditing(false);
-                    setShowMobileModal(false);
-                  }}
-                >
-                  Save
-                </button>
+                <>
+                  <button
+                    className="primary"
+                    onClick={async () => {
+                      await handleSave();
+                      setShowMobileModal(false);
+                    }}
+                    disabled={isUploading}
+                  >
+                    {isUploading ? 'Saving...' : 'Save'}
+                  </button>
+                  <button
+                    className="secondary"
+                    onClick={() => {
+                      handleCancel();
+                      setShowMobileModal(false);
+                    }}
+                    disabled={isUploading}
+                  >
+                    Cancel
+                  </button>
+                </>
               ) : (
                 <button 
                   className="secondary" 

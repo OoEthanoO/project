@@ -14,6 +14,7 @@ type Props = {
   onUpdate: (id: string, updates: Partial<TaskNode>) => void;
   planningIds?: Set<string>;
   onEditModeChange?: (isEditing: boolean) => void;
+  onShowInTree?: (id: string) => void;
   userId?: string;
   balanceCents?: number;
   todayUtc?: number;
@@ -189,7 +190,7 @@ const uploadPendingAttachments = async (attachments: Attachment[], userId?: stri
   );
 };
 
-const SimpleListView = ({ tasks, onSplit, onDelete, onUpdate, planningIds = new Set(), onEditModeChange, userId, balanceCents, todayUtc }: Props) => {
+const SimpleListView = ({ tasks, onSplit, onDelete, onUpdate, planningIds = new Set(), onEditModeChange, onShowInTree, userId, balanceCents, todayUtc }: Props) => {
   const flat = flattenTasks(tasks || []);
   const taskById = new Map(flat.map((task) => [task.id, task]));
   const taskComparator = compareTasks(taskById);
@@ -208,6 +209,7 @@ const SimpleListView = ({ tasks, onSplit, onDelete, onUpdate, planningIds = new 
           onUpdate={onUpdate}
           planningIds={planningIds}
           onEditModeChange={onEditModeChange}
+          onShowInTree={onShowInTree}
           userId={userId}
           balanceCents={balanceCents}
           todayUtc={todayUtc}
@@ -224,6 +226,7 @@ const ListItem = ({
   onUpdate,
   planningIds,
   onEditModeChange,
+  onShowInTree,
   userId,
   balanceCents,
   todayUtc
@@ -234,6 +237,7 @@ const ListItem = ({
   onUpdate: (id: string, updates: Partial<TaskNode>) => void;
   planningIds?: Set<string>;
   onEditModeChange?: (isEditing: boolean) => void;
+  onShowInTree?: (id: string) => void;
   userId?: string;
   balanceCents?: number;
   todayUtc?: number;
@@ -348,6 +352,17 @@ const ListItem = ({
       setEditing(false);
     };
     run();
+  };
+
+  const handleCancel = () => {
+    setTitle(task.title);
+    setDueDate(task.dueDate || '');
+    setStartDate(task.startDate || '');
+    setDescription(task.description || '');
+    setWorkDays(task.workDays || []);
+    setAttachments(task.attachments || []);
+    setAttachError('');
+    setEditing(false);
   };
 
   const handleFiles = async (files: FileList | null) => {
@@ -633,9 +648,14 @@ const ListItem = ({
       )}
       <div className="task-actions" style={editing ? { display: 'flex' } : undefined}>
         {editing && (
-          <button className="primary" onClick={handleSave} disabled={isUploading}>
-            {isUploading ? 'Saving...' : 'Save'}
-          </button>
+          <>
+            <button className="primary" onClick={handleSave} disabled={isUploading}>
+              {isUploading ? 'Saving...' : 'Save'}
+            </button>
+            <button className="secondary" onClick={handleCancel} disabled={isUploading}>
+              Cancel
+            </button>
+          </>
         )}
       </div>
       {contextMenu && !isMobile && createPortal(
@@ -722,6 +742,16 @@ const ListItem = ({
               )}
             </div>
 
+            <button
+              className="context-menu-item"
+              onClick={() => {
+                setContextMenu(null);
+                onShowInTree?.(task.id);
+              }}
+              disabled={!onShowInTree}
+            >
+              🌲 Show in tree
+            </button>
             <button
               className="context-menu-item"
               onClick={() => {

@@ -743,9 +743,27 @@ textarea {
   border-width: 2px;
   transform: translateY(-2px);
 }
+.task-card.tree-highlight {
+  animation: tree-highlight 1600ms ease-out;
+}
 .task-card:hover {
   box-shadow: var(--shadow-lg);
   transform: translateY(-1px);
+}
+
+@keyframes tree-highlight {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 191, 0, 0.5), var(--shadow-lg);
+    border-color: #f4c542;
+  }
+  70% {
+    box-shadow: 0 0 0 12px rgba(255, 191, 0, 0), var(--shadow);
+    border-color: #f4c542;
+  }
+  100% {
+    box-shadow: var(--shadow);
+    border-color: var(--border);
+  }
 }
 
 .section-header {
