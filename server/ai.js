@@ -288,6 +288,7 @@ export const generateSubtasks = async ({ task, ancestors = [], conversation = []
   const promptText = [
     'Split the given task into concrete, milestone-based subtasks sized to the work. Do NOT assume a daily split.',
     `Today: ${startDateText}. Treat this as the earliest work date (the later of now or any task start).`,
+    `Never set a subtask dueDate to Today (${startDateText}); every subtask dueDate must be strictly after today.`,
     'If the parent has a due date, keep every subtask on or before it. Still assign a concrete dueDate after today for every subtask.',
     'Be concise and actionable. Every subtask MUST include a dueDate (YYYY-MM-DD). Never return null for dueDate. Due dates must be AFTER today.',
     'Interpret all due dates as deadlines at the START of that day (00:00), so finish work by the prior day if needed.',
