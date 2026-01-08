@@ -285,7 +285,9 @@ const TaskNodeView = ({
   const hasDescription = descriptionText.length > 0;
   const hasMinBalance = (balanceCents ?? 0) >= 50;
   const dueSoonUtc = resolveTodayUtc(todayUtc) + 24 * 60 * 60 * 1000;
+  const hasDueSoonSelf = !isDone && isDueOnOrBefore(task.dueDate, dueSoonUtc);
   const hasDueSoonSubtask = hasOpenSubtaskDueSoon(task, dueSoonUtc);
+  const hasDueSoonIndicator = hasDueSoonSelf || hasDueSoonSubtask;
   const splitDisabledReason = !hasMinBalance
     ? 'Minimum $0.50 balance required to use AI features.'
     : !canSplit
@@ -690,8 +692,11 @@ const TaskNodeView = ({
                   {task.status === 'done' ? '✓' : task.status === 'in-progress' ? '◐' : '○'}
                 </button>
                 <p className={`task-title ${isDone ? 'task-done' : ''}`} style={{ margin: 0 }}>{task.title}</p>
-                {hasDueSoonSubtask && (
-                  <span className="due-soon-icon" title="An open subtask is due soon">
+                {hasDueSoonIndicator && (
+                  <span
+                    className="due-soon-icon"
+                    title={hasDueSoonSelf ? 'This task is due soon' : 'An open subtask is due soon'}
+                  >
                     ⏰
                   </span>
                 )}
