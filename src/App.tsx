@@ -10,7 +10,7 @@ import ChatPanel from './components/ChatPanel';
 import AdminPanel from './components/AdminPanel';
 import { ChatMessage, TaskNode } from './types';
 import { addChild, findTask, randomId, removeTask, reorderWithinParent, updateTask, getR2KeysForTask, getAncestors, moveTaskToTop, moveTaskToBottom, updateAncestorStatuses } from './lib/task-utils';
-import { chatWithPlanner, generateSubtasks } from './lib/ai';
+import { abortAiSplit, chatWithPlanner, generateSubtasks } from './lib/ai';
 import AuthForm from './components/AuthForm';
 import { currentUser, login, logout, register } from './lib/auth';
 import { fetchState, saveState } from './lib/state';
@@ -304,6 +304,7 @@ const App = () => {
   const [authNotice, setAuthNotice] = useState('');
   const [isEditingTask, setIsEditingTask] = useState(false); // Track if any task is in edit mode
   const [backupAvailable, setBackupAvailable] = useState<any>(null); // Track if backup exists
+  const [splitAbortNotice, setSplitAbortNotice] = useState<string | null>(null);
   const [showAccountDropdown, setShowAccountDropdown] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState(0);
@@ -323,12 +324,14 @@ const App = () => {
   const saveInFlightRef = useRef(false);
   const pendingSaveRef = useRef<{ payload: SavePayload; saveToken: number } | null>(null);
   const splitRequestRef = useRef<Map<string, number>>(new Map());
+  const splitAbortRef = useRef<Map<string, { controller: AbortController; requestId: string }>>(new Map());
   const lastContentTabRef = useRef<'tree' | 'list' | 'trash'>('tree');
   const balanceCentsRef = useRef(0);
   const balanceAnimRef = useRef<number | null>(null);
   const balanceDeltaTimeoutRef = useRef<number | null>(null);
   const balanceAnimatingRef = useRef(false);
   const balanceStartTimeoutRef = useRef<number | null>(null);
+  const splitAbortNoticeTimeoutRef = useRef<number | null>(null);
   // Prevent spamming version-update logs and duplicate reload timers
   const pendingReloadRef = useRef(false);
   const addTaskButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -1477,6 +1480,9 @@ const App = () => {
     });
     const splitToken = Date.now();
     splitRequestRef.current.set(id, splitToken);
+    const splitRequestId = randomId();
+    const controller = new AbortController();
+    splitAbortRef.current.set(id, { controller, requestId: splitRequestId });
     try {
       const ancestors = getAncestors(tasks, id);
       const subtasks = await generateSubtasks({
@@ -1486,6 +1492,8 @@ const App = () => {
         globalInstruction,
         modelId,
         webSearchEnabled,
+        splitRequestId,
+        abortSignal: controller.signal,
         userId: user.id,
         clientLocalDate
       });
@@ -1514,6 +1522,10 @@ const App = () => {
       }
     } catch (err) {
       if (splitRequestRef.current.get(id) === splitToken) {
+        if (err && typeof err === 'object' && 'name' in err && err.name === 'AbortError') {
+          // User-initiated abort; no error alert needed.
+          return;
+        }
         console.error('AI split failed', err);
         alert(`AI split failed: ${err instanceof Error ? err.message : 'Please try again.'}`);
       }
@@ -1526,7 +1538,36 @@ const App = () => {
       if (splitRequestRef.current.get(id) === splitToken) {
         splitRequestRef.current.delete(id);
       }
+      splitAbortRef.current.delete(id);
     }
+  };
+
+  const handleAbortSplit = async (id: string) => {
+    if (!user) return;
+    const entry = splitAbortRef.current.get(id);
+    if (!entry) return;
+    const confirmed = window.confirm('Abort AI split? Funds are still deducted for any work performed.');
+    if (!confirmed) return;
+    if (splitAbortNoticeTimeoutRef.current) {
+      window.clearTimeout(splitAbortNoticeTimeoutRef.current);
+    }
+    entry.controller.abort();
+    splitAbortRef.current.delete(id);
+    splitRequestRef.current.delete(id);
+    setPlanningIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+    try {
+      await abortAiSplit({ splitRequestId: entry.requestId, userId: user.id });
+    } catch (err) {
+      console.warn('Failed to notify server about split abort', err);
+    }
+    setSplitAbortNotice('Funds are still deducted for any work performed.');
+    splitAbortNoticeTimeoutRef.current = window.setTimeout(() => {
+      setSplitAbortNotice(null);
+    }, 8000);
   };
 
   const handleChat = async (text: string) => {
@@ -2018,6 +2059,25 @@ const App = () => {
           </button>
         </div>
       )}
+      {splitAbortNotice && (
+        <div className="override-banner app-override-banner" role="status">
+          <div className="override-banner-text">
+            <strong>AI split aborted</strong>
+            <span>{splitAbortNotice}</span>
+          </div>
+          <button
+            className="secondary"
+            onClick={() => {
+              if (splitAbortNoticeTimeoutRef.current) {
+                window.clearTimeout(splitAbortNoticeTimeoutRef.current);
+              }
+              setSplitAbortNotice(null);
+            }}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* Main content area with sidebar */}
       <div className={`app-content ${showChat ? 'with-chat-sidebar' : ''}`}>
@@ -2113,6 +2173,7 @@ const App = () => {
             <TaskTree
               tasks={tasks}
               onSplit={handleSplit}
+              onAbortSplit={handleAbortSplit}
               onAddSubtask={handleAddTask}
               onReorder={(newTasks) => {
                 lastUserActionRef.current = Date.now();
@@ -2155,6 +2216,7 @@ const App = () => {
             <SimpleListView
               tasks={tasks}
               onSplit={handleSplit}
+              onAbortSplit={handleAbortSplit}
               onDelete={(id) => {
                 const ok = window.confirm('Move this task and its subtasks to trash? Attachments stay until permanently deleted.');
                 if (!ok) return;

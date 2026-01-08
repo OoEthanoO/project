@@ -18,18 +18,21 @@ const apiChat = '/api/ai/chat';
  * @param {string} [params.globalInstruction] - Global instruction
  * @param {string} [params.modelId] - AI model ID
  * @param {boolean} [params.webSearchEnabled] - Whether to allow web search
+ * @param {string} [params.splitRequestId] - Client split request ID for aborts
+ * @param {AbortSignal} [params.abortSignal] - Optional abort signal
  * @param {string} params.userId - User ID
  * @param {string} [params.clientLocalDate] - Optional override for the client's local date (YYYY-MM-DD)
  * @returns {Promise<TaskNode[]>}
  */
-export const generateSubtasks = async ({ task, ancestors, conversation, globalInstruction, modelId, webSearchEnabled, userId, clientLocalDate }) => {
+export const generateSubtasks = async ({ task, ancestors, conversation, globalInstruction, modelId, webSearchEnabled, splitRequestId, abortSignal, userId, clientLocalDate }) => {
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
     const now = new Date();
     const resolvedClientLocalDate = clientLocalDate || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     const res = await apiCall(apiSplit, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ task, ancestors, conversation, globalInstruction, modelId, webSearchEnabled, userId, clientLocalDate: resolvedClientLocalDate, clientTimeZone: tz })
+        body: JSON.stringify({ task, ancestors, conversation, globalInstruction, modelId, webSearchEnabled, splitRequestId, userId, clientLocalDate: resolvedClientLocalDate, clientTimeZone: tz }),
+        signal: abortSignal
     });
     if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
@@ -89,4 +92,15 @@ export const chatWithPlanner = async (prompt, tasks, globalInstruction, selected
         attachmentsUsed,
         createdAt: new Date().toISOString()
     };
+};
+
+export const abortAiSplit = async ({ splitRequestId, userId }) => {
+    if (!splitRequestId || !userId)
+        return null;
+    const res = await apiCall(`${apiSplit}/abort`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ splitRequestId, userId })
+    });
+    return res.ok ? res.json().catch(() => ({})) : null;
 };

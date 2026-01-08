@@ -49,6 +49,45 @@ console.log('[env] APP_BASE_URL set:', !!process.env.APP_BASE_URL);
 app.use('/api/payments/stripe/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json({ limit: '10mb' }));
 
+const SPLIT_ABORT_TTL_MS = 15 * 60 * 1000;
+const splitAbortRegistry = new Map();
+
+const pruneSplitAbortRegistry = () => {
+  const now = Date.now();
+  for (const [id, entry] of splitAbortRegistry.entries()) {
+    if (!entry?.createdAt || now - entry.createdAt > SPLIT_ABORT_TTL_MS) {
+      splitAbortRegistry.delete(id);
+    }
+  }
+};
+
+const registerSplitRequest = ({ splitRequestId, userId }) => {
+  if (!splitRequestId) return null;
+  const existing = splitAbortRegistry.get(splitRequestId);
+  if (existing) return existing;
+  const entry = {
+    splitRequestId,
+    userId,
+    aborted: false,
+    createdAt: Date.now(),
+    abortedAt: null,
+    completedAt: null
+  };
+  splitAbortRegistry.set(splitRequestId, entry);
+  return entry;
+};
+
+const markSplitAborted = ({ splitRequestId, userId, reason }) => {
+  if (!splitRequestId) return null;
+  const entry = splitAbortRegistry.get(splitRequestId) || registerSplitRequest({ splitRequestId, userId });
+  if (!entry) return null;
+  if (entry.userId && userId && entry.userId !== userId) return null;
+  entry.aborted = true;
+  entry.abortedAt = Date.now();
+  if (reason) entry.reason = reason;
+  return entry;
+};
+
 // Robust CORS: allow frontend origin and handle preflight
 const allowedOrigin = normalizeBaseUrl(process.env.APP_BASE_URL || 'http://localhost:5173');
 app.use(cors({
@@ -79,8 +118,18 @@ app.use((req, res, next) => {
 
 app.post('/api/ai/split', async (req, res) => {
   try {
-    const { task, ancestors = [], conversation, globalInstruction, modelId, webSearchEnabled, userId, clientLocalDate, clientTimeZone } = req.body;
+    const { task, ancestors = [], conversation, globalInstruction, modelId, webSearchEnabled, userId, clientLocalDate, clientTimeZone, splitRequestId } = req.body;
     if (!userId) return res.status(400).json({ error: 'Missing userId' });
+    pruneSplitAbortRegistry();
+    const splitEntry = registerSplitRequest({ splitRequestId, userId });
+    if (splitEntry?.aborted) {
+      return res.status(409).json({ error: 'Split request aborted before it started.' });
+    }
+    if (splitRequestId) {
+      req.on('aborted', () => {
+        markSplitAborted({ splitRequestId, userId, reason: 'client_abort' });
+      });
+    }
     const resolvedModelId = applyWebSearchSetting(modelId, webSearchEnabled);
     const isFree = isFreeModel(resolvedModelId);
     if (!isFree) {
@@ -99,6 +148,15 @@ app.post('/api/ai/split', async (req, res) => {
         description: 'AI split charge (non-refundable)'
       });
     }
+    if (splitEntry) {
+      splitEntry.completedAt = Date.now();
+    }
+    if (splitEntry?.aborted) {
+      if (!res.headersSent && !res.writableEnded) {
+        return res.status(409).json({ error: 'Split request aborted.', aborted: true });
+      }
+      return;
+    }
     res.json({ items: result.items });
   } catch (err) {
     const billing = err?.billing;
@@ -111,6 +169,15 @@ app.post('/api/ai/split', async (req, res) => {
     }
     res.status(500).json({ error: (err && err.message) || 'Unknown error' });
   }
+});
+
+app.post('/api/ai/split/abort', (req, res) => {
+  const { splitRequestId, userId } = req.body || {};
+  if (!splitRequestId || !userId) return res.status(400).json({ error: 'Missing splitRequestId or userId' });
+  pruneSplitAbortRegistry();
+  const entry = markSplitAborted({ splitRequestId, userId, reason: 'user_abort' });
+  if (!entry) return res.status(404).json({ error: 'Split request not found' });
+  res.json({ ok: true, aborted: true });
 });
 
 app.post('/api/ai/chat', async (req, res) => {

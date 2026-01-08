@@ -946,6 +946,12 @@ textarea {
   display: inline-block;
   animation: spin 700ms linear infinite;
 }
+.due-soon-icon {
+  margin-left: 6px;
+  font-size: 12px;
+  line-height: 1;
+  color: #d97706;
+}
 
 .chips { display: flex; flex-wrap: wrap; gap: var(--space-sm); }
 .chip {

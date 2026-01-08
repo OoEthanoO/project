@@ -10,6 +10,7 @@ import { formatWorkDays } from '../lib/work-days';
 type Props = {
   tasks: TaskNode[];
   onSplit: (id: string) => void;
+  onAbortSplit?: (id: string) => void;
   onDelete: (id: string) => void;
   onUpdate: (id: string, updates: Partial<TaskNode>) => void;
   planningIds?: Set<string>;
@@ -150,6 +151,31 @@ const isDueTodayOrPast = (dueDate?: string, todayUtc?: number) => {
   return due <= todayUtc;
 };
 
+const resolveTodayUtc = (todayUtc?: number) => {
+  if (typeof todayUtc === 'number') return todayUtc;
+  const now = new Date();
+  return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+};
+
+const isDueOnOrBefore = (dueDate?: string, compareUtc?: number) => {
+  if (!dueDate || typeof compareUtc !== 'number') return false;
+  const trimmed = dueDate.trim();
+  if (!trimmed) return false;
+  const [y, m, d] = trimmed.split('-').map((p) => parseInt(p, 10));
+  const due = !Number.isNaN(y) && !Number.isNaN(m) && !Number.isNaN(d) ? Date.UTC(y, m - 1, d) : Date.parse(trimmed);
+  if (Number.isNaN(due)) return false;
+  return due <= compareUtc;
+};
+
+const hasOpenSubtaskDueSoon = (task: TaskNode, compareUtc?: number): boolean => {
+  const children = task.children || [];
+  for (const child of children) {
+    if (child.status !== 'done' && isDueOnOrBefore(child.dueDate, compareUtc)) return true;
+    if (hasOpenSubtaskDueSoon(child, compareUtc)) return true;
+  }
+  return false;
+};
+
 const uploadPendingAttachments = async (attachments: Attachment[], userId?: string): Promise<Attachment[]> => {
   if (!attachments.length) return attachments;
   return Promise.all(
@@ -190,7 +216,7 @@ const uploadPendingAttachments = async (attachments: Attachment[], userId?: stri
   );
 };
 
-const SimpleListView = ({ tasks, onSplit, onDelete, onUpdate, planningIds = new Set(), onEditModeChange, onShowInTree, userId, balanceCents, todayUtc }: Props) => {
+const SimpleListView = ({ tasks, onSplit, onAbortSplit, onDelete, onUpdate, planningIds = new Set(), onEditModeChange, onShowInTree, userId, balanceCents, todayUtc }: Props) => {
   const flat = flattenTasks(tasks || []);
   const taskById = new Map(flat.map((task) => [task.id, task]));
   const taskComparator = compareTasks(taskById);
@@ -205,6 +231,7 @@ const SimpleListView = ({ tasks, onSplit, onDelete, onUpdate, planningIds = new 
           key={task.id}
           task={task}
           onSplit={onSplit}
+          onAbortSplit={onAbortSplit}
           onDelete={onDelete}
           onUpdate={onUpdate}
           planningIds={planningIds}
@@ -222,6 +249,7 @@ const SimpleListView = ({ tasks, onSplit, onDelete, onUpdate, planningIds = new 
 const ListItem = ({
   task,
   onSplit,
+  onAbortSplit,
   onDelete,
   onUpdate,
   planningIds,
@@ -233,6 +261,7 @@ const ListItem = ({
 }: {
   task: FlatTask;
   onSplit: (id: string) => void;
+  onAbortSplit?: (id: string) => void;
   onDelete: (id: string) => void;
   onUpdate: (id: string, updates: Partial<TaskNode>) => void;
   planningIds?: Set<string>;
@@ -266,6 +295,8 @@ const ListItem = ({
   const descriptionText = task.description?.trim() ?? '';
   const hasDescription = descriptionText.length > 0;
   const hasMinBalance = (balanceCents ?? 0) >= 50;
+  const dueSoonUtc = resolveTodayUtc(todayUtc) + 24 * 60 * 60 * 1000;
+  const hasDueSoonSubtask = hasOpenSubtaskDueSoon(task, dueSoonUtc);
   const splitDisabledReason = !hasMinBalance
     ? 'Minimum $0.50 balance required to use AI features.'
     : !canSplit
@@ -542,6 +573,11 @@ const ListItem = ({
                   {task.status === 'done' ? '✓' : task.status === 'in-progress' ? '◐' : '○'}
                 </button>
                 <p className={`task-title ${isDone ? 'task-done' : ''}`} style={{ margin: 0 }}>{task.title}</p>
+                {hasDueSoonSubtask && (
+                  <span className="due-soon-icon" title="An open subtask is due soon">
+                    ⏰
+                  </span>
+                )}
                 {task.createdBy === 'ai' && (
                   <span className="badge badge-ai" style={{ fontSize: 10, padding: '2px 6px' }}>
                     AI
@@ -692,6 +728,17 @@ const ListItem = ({
               >
                 {planningIds?.has(task.id) ? 'Planning…' : 'AI split'}
               </button>
+              {isSplitting && onAbortSplit && (
+                <button
+                  className="secondary"
+                  onClick={() => {
+                    setShowMobileModal(false);
+                    onAbortSplit(task.id);
+                  }}
+                >
+                  Abort split
+                </button>
+              )}
               <button
                 className="secondary"
                 onClick={() => {
@@ -792,6 +839,17 @@ const ListItem = ({
             >
               {planningIds?.has(task.id) ? 'Planning…' : '🤖 AI split'}
             </button>
+            {isSplitting && onAbortSplit && (
+              <button
+                className="context-menu-item"
+                onClick={() => {
+                  setContextMenu(null);
+                  onAbortSplit(task.id);
+                }}
+              >
+                ⛔ Abort split
+              </button>
+            )}
             <div
               className={`context-menu-item has-submenu ${copySubmenuOpen ? 'open' : ''}`}
               onMouseEnter={openCopySubmenu}
