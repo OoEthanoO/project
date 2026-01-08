@@ -16,7 +16,13 @@ import { currentUser, login, logout, register } from './lib/auth';
 import { fetchState, saveState } from './lib/state';
 import { fetchBalance, topUp } from './lib/billing';
 import { createCheckoutSession } from './lib/payments';
-import { getDefaultModel, getValidModelOrDefault, getModelById } from '../shared/model-config.js';
+import {
+  applyWebSearchSetting,
+  getDefaultModel,
+  getValidModelOrDefault,
+  getModelById,
+  hasOnlineSuffix
+} from '../shared/model-config.js';
 import { getAvailableBackups, restoreFromBackup, clearBackup } from './lib/backup-recovery.js';
 import { formatWorkDays } from './lib/work-days';
 
@@ -74,6 +80,7 @@ type SavePayload = {
   config: {
     globalInstruction: string;
     modelId?: string;
+    webSearchEnabled?: boolean;
     collapsedTaskIds?: string[];
   };
 };
@@ -332,7 +339,9 @@ const App = () => {
 
   const [globalInstruction, setGlobalInstruction] = useState('');
   const defaultModel = getDefaultModel().id;
+  const defaultWebSearchEnabled = hasOnlineSuffix(defaultModel);
   const [modelId, setModelId] = useState(defaultModel);
+  const [webSearchEnabled, setWebSearchEnabled] = useState(defaultWebSearchEnabled);
   const currentModel = getModelById(modelId);
   const hasMinBalance = balanceCents >= 50;
   const todayUtc = useMemo(() => resolveTodayUtc(todayOverride), [todayOverride]);
@@ -343,6 +352,7 @@ const App = () => {
     messages,
     globalInstruction,
     modelId,
+    webSearchEnabled,
     collapsedTaskIds
   });
   const BALANCE_DELTA_PAUSE_MS = 3000;
@@ -793,9 +803,10 @@ const App = () => {
       messages,
       globalInstruction,
       modelId,
+      webSearchEnabled,
       collapsedTaskIds
     };
-  }, [tasks, trash, messages, globalInstruction, modelId, collapsedTaskIds]);
+  }, [tasks, trash, messages, globalInstruction, modelId, webSearchEnabled, collapsedTaskIds]);
 
   // Check for available backup when user logs in or tasks change
   useEffect(() => {
@@ -819,6 +830,7 @@ const App = () => {
         setMessages([initialCoachMessage()]);
         setGlobalInstruction('');
         setModelId(defaultModel);
+        setWebSearchEnabled(defaultWebSearchEnabled);
         setShowOnboarding(false);
         setOnboardingStep(0);
         return;
@@ -881,7 +893,13 @@ const App = () => {
         });
         setGlobalInstruction(state.config?.globalInstruction || '');
         const loadedModelId = state.config?.modelId || import.meta.env.VITE_OPENAI_MODEL || defaultModel;
-        setModelId(getValidModelOrDefault(loadedModelId));
+        const resolvedModelId = getValidModelOrDefault(loadedModelId);
+        const persistedWebSearch = state.config?.webSearchEnabled;
+        const resolvedWebSearchEnabled =
+          typeof persistedWebSearch === 'boolean' ? persistedWebSearch : hasOnlineSuffix(resolvedModelId);
+        const adjustedModelId = applyWebSearchSetting(resolvedModelId, resolvedWebSearchEnabled);
+        setWebSearchEnabled(resolvedWebSearchEnabled);
+        setModelId(getValidModelOrDefault(adjustedModelId));
         // Ensure collapsed IDs are typed as Set<string>, but don't override recent user toggles
         const incomingCollapsed = new Set<string>((state.config?.collapsedTaskIds || []) as string[]);
         if (Date.now() - lastUserActionRef.current > 800) {
@@ -932,6 +950,7 @@ const App = () => {
       config: {
         globalInstruction: configOverride.globalInstruction ?? base.globalInstruction,
         modelId: configOverride.modelId ?? base.modelId,
+        webSearchEnabled: configOverride.webSearchEnabled ?? base.webSearchEnabled,
         collapsedTaskIds: configOverride.collapsedTaskIds ?? Array.from(base.collapsedTaskIds)
       }
     };
@@ -971,11 +990,11 @@ const App = () => {
         tasks,
         trash,
         chat: messages,
-        config: { globalInstruction, modelId, collapsedTaskIds: Array.from(collapsedTaskIds) }
+        config: { globalInstruction, modelId, webSearchEnabled, collapsedTaskIds: Array.from(collapsedTaskIds) }
       }, saveToken);
     }, 300);
     return () => clearTimeout(timer);
-  }, [user, hydrated, tasks, trash, messages, globalInstruction, modelId, collapsedTaskIds]);
+  }, [user, hydrated, tasks, trash, messages, globalInstruction, modelId, webSearchEnabled, collapsedTaskIds]);
 
   useEffect(() => {
     if (!user || !hydrated) return;
@@ -1139,10 +1158,16 @@ const App = () => {
         // Only update config if changed
         const newInstruction = state.config?.globalInstruction || '';
         const newModelId = state.config?.modelId || import.meta.env.VITE_OPENAI_MODEL || defaultModel;
-        const validatedModelId = getValidModelOrDefault(newModelId);
+        const resolvedModelId = getValidModelOrDefault(newModelId);
+        const persistedWebSearch = state.config?.webSearchEnabled;
+        const newWebSearchEnabled =
+          typeof persistedWebSearch === 'boolean' ? persistedWebSearch : hasOnlineSuffix(resolvedModelId);
+        const adjustedModelId = applyWebSearchSetting(resolvedModelId, newWebSearchEnabled);
+        const validatedModelId = getValidModelOrDefault(adjustedModelId);
         // Type collapsed IDs explicitly to avoid Set<unknown>
         const newCollapsedIds: Set<string> = new Set<string>((state.config?.collapsedTaskIds || []) as string[]);
         setGlobalInstruction((prev) => prev === newInstruction ? prev : newInstruction);
+        setWebSearchEnabled((prev) => prev === newWebSearchEnabled ? prev : newWebSearchEnabled);
         setModelId((prev) => prev === validatedModelId ? prev : validatedModelId);
         if (startedAt < lastUserActionRef.current || hasPendingLocalChanges) {
           // Skip collapsed-id update if user interacted after this poll started or local changes are pending
@@ -1460,6 +1485,7 @@ const App = () => {
         conversation: messages,
         globalInstruction,
         modelId,
+        webSearchEnabled,
         userId: user.id,
         clientLocalDate
       });
@@ -1519,7 +1545,7 @@ const App = () => {
     setMessages((prev) => [...prev, userMsg]);
     setChatting(true);
     try {
-      const aiMessage = await chatWithPlanner(text, tasks, globalInstruction, null, modelId, user.id, clientLocalDate);
+      const aiMessage = await chatWithPlanner(text, tasks, globalInstruction, null, modelId, user.id, clientLocalDate, webSearchEnabled);
       setMessages((prev) => [...prev, aiMessage]);
       // Persist chat immediately to reduce chance of losing the last response
       const baseMessages = latestStateRef.current.messages;
@@ -1556,6 +1582,11 @@ const App = () => {
     } else {
       setShowSettingsModal(true);
     }
+  };
+
+  const updateWebSearchSetting = (enabled: boolean) => {
+    setWebSearchEnabled(enabled);
+    setModelId((prev) => getValidModelOrDefault(applyWebSearchSetting(prev, enabled)));
   };
 
   const renderSettingsContent = (onDone: () => void) => {
@@ -1682,6 +1713,24 @@ const App = () => {
           <button className="secondary" onClick={() => setGlobalInstruction('')} style={{ marginTop: 'var(--space-sm)' }}>
             Clear instructions
           </button>
+        </div>
+
+        <div style={{ marginBottom: 'var(--space-xl)' }}>
+          <p style={{ fontWeight: 600, marginBottom: 'var(--space-sm)' }}>Web search for AI</p>
+          <p className="muted" style={{ marginBottom: 'var(--space-sm)' }}>
+            Let the model use the internet for current details and curriculum references.
+          </p>
+          <p className="muted" style={{ marginBottom: 'var(--space-sm)' }}>
+            Enabling web search may slightly increase costs.
+          </p>
+          <label className="settings-toggle">
+            <input
+              type="checkbox"
+              checked={webSearchEnabled}
+              onChange={(e) => updateWebSearchSetting(e.target.checked)}
+            />
+            <span>Enable web search</span>
+          </label>
         </div>
         
         <div style={{ marginBottom: 'var(--space-xl)' }}>

@@ -64,7 +64,8 @@ export const loadConfig = () => {
     const cfg = safeParse(localStorage.getItem(CONFIG_KEY), {});
     return {
         globalInstruction: cfg.globalInstruction || '',
-        modelId: cfg.modelId
+        modelId: cfg.modelId,
+        webSearchEnabled: cfg.webSearchEnabled
     };
 };
 export const saveConfig = (config) => {

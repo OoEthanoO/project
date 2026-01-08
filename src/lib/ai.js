@@ -17,18 +17,19 @@ const apiChat = '/api/ai/chat';
  * @param {ChatMessage[]} params.conversation - Chat history
  * @param {string} [params.globalInstruction] - Global instruction
  * @param {string} [params.modelId] - AI model ID
+ * @param {boolean} [params.webSearchEnabled] - Whether to allow web search
  * @param {string} params.userId - User ID
  * @param {string} [params.clientLocalDate] - Optional override for the client's local date (YYYY-MM-DD)
  * @returns {Promise<TaskNode[]>}
  */
-export const generateSubtasks = async ({ task, ancestors, conversation, globalInstruction, modelId, userId, clientLocalDate }) => {
+export const generateSubtasks = async ({ task, ancestors, conversation, globalInstruction, modelId, webSearchEnabled, userId, clientLocalDate }) => {
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
     const now = new Date();
     const resolvedClientLocalDate = clientLocalDate || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     const res = await apiCall(apiSplit, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ task, ancestors, conversation, globalInstruction, modelId, userId, clientLocalDate: resolvedClientLocalDate, clientTimeZone: tz })
+        body: JSON.stringify({ task, ancestors, conversation, globalInstruction, modelId, webSearchEnabled, userId, clientLocalDate: resolvedClientLocalDate, clientTimeZone: tz })
     });
     if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
@@ -58,18 +59,19 @@ export const generateSubtasks = async ({ task, ancestors, conversation, globalIn
  * @param {string} [globalInstruction] - Global instruction
  * @param {string | null} [selectedTaskId] - Selected task ID
  * @param {string} [modelId] - AI model ID
+ * @param {boolean} [webSearchEnabled] - Whether to allow web search
  * @param {string} [userId] - User ID
  * @param {string} [clientLocalDate] - Optional override for the client's local date (YYYY-MM-DD)
  * @returns {Promise<ChatMessage>}
  */
-export const chatWithPlanner = async (prompt, tasks, globalInstruction, selectedTaskId, modelId, userId, clientLocalDate) => {
+export const chatWithPlanner = async (prompt, tasks, globalInstruction, selectedTaskId, modelId, userId, clientLocalDate, webSearchEnabled) => {
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
     const now = new Date();
     const resolvedClientLocalDate = clientLocalDate || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     const res = await apiCall(apiChat, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, tasks, globalInstruction, selectedTaskId, modelId, userId, clientLocalDate: resolvedClientLocalDate, clientTimeZone: tz })
+        body: JSON.stringify({ prompt, tasks, globalInstruction, selectedTaskId, modelId, webSearchEnabled, userId, clientLocalDate: resolvedClientLocalDate, clientTimeZone: tz })
     });
     if (!res.ok) {
         const errData = await res.json().catch(() => ({}));

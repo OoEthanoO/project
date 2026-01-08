@@ -3,19 +3,45 @@
  * Change the model here and it will be reflected everywhere in the app.
  */
 
+const GEMINI_PRICING = { in: 2, out: 12 };
+const GEMINI_PRICING_TIERS = [
+  { maxPromptTokens: 200000, maxCompletionTokens: 200000, in: 2, out: 12 },
+  { maxPromptTokens: Infinity, maxCompletionTokens: Infinity, in: 4, out: 18 }
+];
+const GEMINI_BASE_MODEL = 'google/gemini-3-pro-preview';
 export const MODEL_TIERS = [
   {
-    id: 'google/gemini-3-pro-preview',
+    id: `${GEMINI_BASE_MODEL}:online`,
     label: 'Gemini 3 Pro Preview',
+    note: 'Gemini 3 Pro Preview via OpenRouter; supports attachments and web search.',
+    multimodal: true,
+    pricing: GEMINI_PRICING,
+    pricingTiers: GEMINI_PRICING_TIERS
+  },
+  {
+    id: GEMINI_BASE_MODEL,
+    label: 'Gemini 3 Pro Preview (web search off)',
     note: 'Gemini 3 Pro Preview via OpenRouter; supports attachments.',
     multimodal: true,
-    pricing: { in: 2, out: 12 },
-    pricingTiers: [
-      { maxPromptTokens: 200000, maxCompletionTokens: 200000, in: 2, out: 12 },
-      { maxPromptTokens: Infinity, maxCompletionTokens: Infinity, in: 4, out: 18 }
-    ]
+    pricing: GEMINI_PRICING,
+    pricingTiers: GEMINI_PRICING_TIERS
   }
 ];
+
+const ONLINE_SUFFIX = ':online';
+
+export const hasOnlineSuffix = (modelId = '') => modelId.endsWith(ONLINE_SUFFIX);
+export const stripOnlineSuffix = (modelId = '') => modelId.replace(/:online\b/g, '');
+export const ensureOnlineSuffix = (modelId = '') => {
+  if (!modelId) return modelId;
+  const base = stripOnlineSuffix(modelId);
+  return base.endsWith(ONLINE_SUFFIX) ? base : `${base}${ONLINE_SUFFIX}`;
+};
+export const applyWebSearchSetting = (modelId, enabled) => {
+  if (!modelId) return modelId;
+  if (typeof enabled !== 'boolean') return modelId;
+  return enabled ? ensureOnlineSuffix(modelId) : stripOnlineSuffix(modelId);
+};
 
 // Helper functions for easy access
 export const getModelById = (modelId) => MODEL_TIERS.find((t) => t.id === modelId);

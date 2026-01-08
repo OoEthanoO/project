@@ -7,7 +7,7 @@ import { getUserState, saveUserState } from './state.js';
 import { getBalance, topUpBalance, chargeUsage } from './billing.js';
 import { createCheckoutSession, handleStripeWebhook } from './stripe.js';
 import { prisma } from './prisma.js';
-import { isFreeModel } from '../shared/model-config.js';
+import { applyWebSearchSetting, isFreeModel } from '../shared/model-config.js';
 
 const normalizeBaseUrl = (value) => {
   if (!value) return 'http://localhost:5173';
@@ -79,14 +79,15 @@ app.use((req, res, next) => {
 
 app.post('/api/ai/split', async (req, res) => {
   try {
-    const { task, ancestors = [], conversation, globalInstruction, modelId, userId, clientLocalDate, clientTimeZone } = req.body;
+    const { task, ancestors = [], conversation, globalInstruction, modelId, webSearchEnabled, userId, clientLocalDate, clientTimeZone } = req.body;
     if (!userId) return res.status(400).json({ error: 'Missing userId' });
-    const isFree = isFreeModel(modelId);
+    const resolvedModelId = applyWebSearchSetting(modelId, webSearchEnabled);
+    const isFree = isFreeModel(resolvedModelId);
     if (!isFree) {
       const bal = await getBalance(userId);
       if (bal < 50) return res.status(402).json({ error: 'Minimum balance of $0.50 required to use AI features' });
     }
-    const result = await generateSubtasks({ task, ancestors, conversation, globalInstruction, modelId, clientLocalDate, clientTimeZone });
+    const result = await generateSubtasks({ task, ancestors, conversation, globalInstruction, modelId: resolvedModelId, webSearchEnabled, clientLocalDate, clientTimeZone });
     if (result.totalCostUsd > 0) {
       const amountCents = Math.ceil(result.totalCostUsd * 100 * 2); // 100% revenue -> double charge
       await chargeUsage({
@@ -114,14 +115,15 @@ app.post('/api/ai/split', async (req, res) => {
 
 app.post('/api/ai/chat', async (req, res) => {
   try {
-    const { prompt, tasks, globalInstruction, selectedTaskId, modelId, userId, clientLocalDate, clientTimeZone } = req.body;
+    const { prompt, tasks, globalInstruction, selectedTaskId, modelId, webSearchEnabled, userId, clientLocalDate, clientTimeZone } = req.body;
     if (!userId) return res.status(400).json({ error: 'Missing userId' });
-    const isFree = isFreeModel(modelId);
+    const resolvedModelId = applyWebSearchSetting(modelId, webSearchEnabled);
+    const isFree = isFreeModel(resolvedModelId);
     if (!isFree) {
       const bal = await getBalance(userId);
       if (bal < 50) return res.status(402).json({ error: 'Minimum balance of $0.50 required to use AI features' });
     }
-    const result = await chatWithPlanner({ prompt, tasks, globalInstruction, selectedTaskId, modelId, clientLocalDate, clientTimeZone });
+    const result = await chatWithPlanner({ prompt, tasks, globalInstruction, selectedTaskId, modelId: resolvedModelId, webSearchEnabled, clientLocalDate, clientTimeZone });
     if (result.totalCostUsd > 0) {
       const amountCents = Math.ceil(result.totalCostUsd * 100 * 2); // 100% revenue -> double charge
       await chargeUsage({

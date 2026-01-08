@@ -17,6 +17,7 @@ export const fetchState = async (userId) => {
         config: {
             globalInstruction: data.config?.globalInstruction || '',
             modelId: data.config?.modelId,
+            webSearchEnabled: data.config?.webSearchEnabled,
             collapsedTaskIds: data.config?.collapsedTaskIds || []
         },
         selectedTaskId: data.selectedTaskId ?? null
@@ -54,6 +55,7 @@ export const saveState = async (userId, state) => {
         config: {
             globalInstruction: data.config?.globalInstruction || '',
             modelId: data.config?.modelId,
+            webSearchEnabled: data.config?.webSearchEnabled,
             collapsedTaskIds: data.config?.collapsedTaskIds || []
         },
         selectedTaskId: data.selectedTaskId ?? null

@@ -50,6 +50,7 @@ export type ChatMessage = {
 export type PlannerConfig = {
   globalInstruction: string;
   modelId?: string;
+  webSearchEnabled?: boolean;
 };
 
 export type AccountUser = {

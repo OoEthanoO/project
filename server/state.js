@@ -4,7 +4,7 @@ const defaults = () => ({
   tasks: [],
   chat: [],
   trash: [],
-  config: { globalInstruction: '', modelId: null, collapsedTaskIds: [] },
+  config: { globalInstruction: '', modelId: null, webSearchEnabled: null, collapsedTaskIds: [] },
   selectedTaskId: null
 });
 
@@ -16,7 +16,7 @@ export const getUserState = async (userId) => {
       tasks: [],
       chat: [],
       trash: [],
-      config: { globalInstruction: '', modelId: null, collapsedTaskIds: [] },
+      config: { globalInstruction: '', modelId: null, webSearchEnabled: null, collapsedTaskIds: [] },
       selectedTaskId: null,
       _explicitlyEmpty: true // Marker that this is intentionally empty (new user)
     };
@@ -29,6 +29,7 @@ export const getUserState = async (userId) => {
     config: {
       globalInstruction: state.config?.globalInstruction || '',
       modelId: state.config?.modelId,
+      webSearchEnabled: state.config?.webSearchEnabled ?? null,
       collapsedTaskIds: state.config?.collapsedTaskIds || []
     },
     selectedTaskId: state.selectedTaskId ?? null,

@@ -1,5 +1,5 @@
 import fetch from 'node-fetch';
-import { getPricingForUsage, supportsFiles } from '../shared/model-config.js';
+import { applyWebSearchSetting, getPricingForUsage, hasOnlineSuffix, supportsFiles } from '../shared/model-config.js';
 
 const formatDate = (date) => date.toISOString().split('T')[0];
 const WORK_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -11,6 +11,8 @@ const nextDay = (day) => {
   return WORK_DAYS[(idx + 1) % WORK_DAYS.length];
 };
 const formatWorkDays = (days) => (days && days.length ? days.join(', ') : 'none');
+const WEB_SEARCH_GUIDANCE =
+  'Web search is enabled. Use online sources to verify facts and current curricula when planning; if a task references a grade, course, or exam, look up the official syllabus or textbook topics and plan from that.';
 
 // Helper: Resolve attachment to data URL or presigned URL
 const resolveAttachment = async (attachment) => {
@@ -196,8 +198,11 @@ const callAiProvider = async ({ messages, modelId, plugins }) => {
   return { content, usage, modelUsed, totalCostUsd: totalCost };
 };
 
-export const generateSubtasks = async ({ task, ancestors = [], conversation = [], globalInstruction, modelId, clientLocalDate, clientTimeZone }) => {
-  const supportsFilesFlag = supportsFiles(modelId);
+export const generateSubtasks = async ({ task, ancestors = [], conversation = [], globalInstruction, modelId, webSearchEnabled, clientLocalDate, clientTimeZone }) => {
+  const resolvedWebSearchEnabled =
+    typeof webSearchEnabled === 'boolean' ? webSearchEnabled : hasOnlineSuffix(modelId || '');
+  const resolvedModelId = applyWebSearchSetting(modelId, resolvedWebSearchEnabled);
+  const supportsFilesFlag = supportsFiles(resolvedModelId);
   // Use the later of today's date and the effective start date (task start or root start).
   const todayDate = clientLocalDate ? new Date(clientLocalDate) : new Date();
   const rootStartDate = ancestors.length ? ancestors[0]?.startDate : null;
@@ -216,29 +221,43 @@ export const generateSubtasks = async ({ task, ancestors = [], conversation = []
     .slice(-4)
     .map((c) => `${c.role === 'user' ? 'User' : 'AI'}: ${c.content}`)
     .join('\n');
-  const attachmentContext = (task.attachments || [])
+  const lineageTasks = [...ancestors, task];
+  const lineageAttachments = lineageTasks.flatMap((item) =>
+    (item.attachments || []).map((attachment) => ({
+      ...attachment,
+      parentTitle: item.title || '(untitled)'
+    }))
+  );
+  const lineageDetails = lineageTasks
+    .map((item, index) => {
+      const label = index === 0 ? 'Root task' : index === lineageTasks.length - 1 ? 'Current task' : `Parent task ${index}`;
+      const description = item.description || 'none';
+      const attachmentsText = (item.attachments || []).length
+        ? item.attachments.map((a) => a.name || a.type || 'file').join(', ')
+        : 'none';
+      return `${label}: ${item.title || '(untitled)'}\nDescription: ${description}\nAttachments: ${attachmentsText}`;
+    })
+    .join('\n\n');
+  const attachmentContext = lineageAttachments
     .filter((a) => a.content && a.extractionStatus === 'ok')
-    .slice(0, 3)
-    .map((a) => `${a.name || 'file'}:\n${(a.content || '').slice(0, 800)}`)
+    .map((a) => `${a.parentTitle} - ${a.name || 'file'}:\n${a.content || ''}`)
     .join('\n---\n');
   
   // Build hierarchy context from ancestors
-  const hierarchyParts = ancestors.map((a) => a.title);
-  hierarchyParts.push(task.title);
+  const hierarchyParts = lineageTasks.map((a) => a.title);
   const hierarchyString = hierarchyParts.join(' > ');
   
   // Resolve attachments from R2 if needed
-  console.log('[generateSubtasks] Task attachments:', task.attachments);
+  console.log('[generateSubtasks] Lineage attachments:', lineageAttachments.length);
   console.log('[generateSubtasks] Model supports files:', supportsFilesFlag);
   console.log('[generateSubtasks] Hierarchy:', hierarchyString);
   
-  const imageAttachments = (task.attachments || [])
-    .filter((a) => (a.dataUrl && a.dataUrl.startsWith('data:image')) || (a.r2Key && a.contentType?.startsWith('image/')))
-    .slice(0, 4);
-  const pdfAttachments = (task.attachments || [])
-    .filter((a) => (a.dataUrl && a.dataUrl.startsWith('data:application/pdf')) || (a.r2Key && a.contentType === 'application/pdf'))
-    .slice(0, 2);
-  const attachmentSummary = (task.attachments || []).map((a) => ({
+  const imageAttachments = lineageAttachments
+    .filter((a) => (a.dataUrl && a.dataUrl.startsWith('data:image')) || (a.r2Key && a.contentType?.startsWith('image/')));
+  const pdfAttachments = lineageAttachments
+    .filter((a) => (a.dataUrl && a.dataUrl.startsWith('data:application/pdf')) || (a.r2Key && a.contentType === 'application/pdf'));
+  const attachmentSummary = lineageAttachments.map((a) => ({
+    parentTitle: a.parentTitle || '(untitled)',
     name: a.name || a.type || 'file',
     size: a.size || null,
     contentType: a.contentType || a.type || 'unknown',
@@ -259,7 +278,7 @@ export const generateSubtasks = async ({ task, ancestors = [], conversation = []
     .map((a) => {
       const sizeKb = a.size ? `${Math.round(a.size / 1024)}kb` : 'size unknown';
       const location = a.hasR2Key ? 'stored remotely' : 'inline';
-      return `${a.name} (${a.contentType}; ${a.extractionStatus}; ${location}; ${sizeKb})`;
+      return `${a.name} (in ${a.parentTitle}; ${a.contentType}; ${a.extractionStatus}; ${location}; ${sizeKb})`;
     })
     .join(' | ');
   
@@ -320,13 +339,14 @@ export const generateSubtasks = async ({ task, ancestors = [], conversation = []
     'Respond ONLY as JSON with shape: {"items":[{"title":"...", "description":"...", "dueDate":"YYYY-MM-DD" | null}]}',
     globalInstruction ? `Global instruction: ${globalInstruction}` : '',
     '',
-    ancestors.length > 0 ? `Task hierarchy (root → parent → current): ${hierarchyString}` : '',
+    lineageTasks.length > 1 ? `Task hierarchy (root → parent → current): ${hierarchyString}` : '',
+    lineageDetails ? `Lineage context:\n${lineageDetails}` : '',
     `Today: ${startDateText}`,
     `Task title: ${task.title}`,
     `Task due: ${task.dueDate ?? 'not provided'}`,
     `Task work days: ${formatWorkDays(taskWorkDays)}`,
     `Task description: ${task.description || 'none'}`,
-    `Attachments: ${task.attachments.map((a) => a.name || a.type || 'file').join(', ') || 'none'}`,
+    `Attachments: ${lineageAttachments.map((a) => `${a.name || a.type || 'file'} (in ${a.parentTitle})`).join(', ') || 'none'}`,
     attachmentMetaText ? `Attachment details: ${attachmentMetaText}` : '',
     attachmentContext ? `Attachment excerpts:\n${attachmentContext}` : '',
     imageParts.length || pdfParts.length ? 'See attached files for current progress—do not redo work already shown there.' : '',
@@ -346,12 +366,18 @@ export const generateSubtasks = async ({ task, ancestors = [], conversation = []
   let modelUsed;
   let totalCostUsd;
   try {
+    const systemPrompt = [
+      'You are a planning assistant that outputs strict JSON. No prose.',
+      resolvedWebSearchEnabled ? WEB_SEARCH_GUIDANCE : ''
+    ]
+      .filter(Boolean)
+      .join(' ');
     const result = await callAiProvider({
       messages: [
-        { role: 'system', content: 'You are a planning assistant that outputs strict JSON. No prose.' },
+        { role: 'system', content: systemPrompt },
         { role: 'user', content: userContent }
       ],
-      modelId,
+      modelId: resolvedModelId,
       plugins:
         supportsFilesFlag && pdfParts.length > 0
           ? [
@@ -367,7 +393,7 @@ export const generateSubtasks = async ({ task, ancestors = [], conversation = []
     totalCostUsd = result.totalCostUsd;
   } catch (err) {
     console.error('[generateSubtasks] AI request failed', {
-      modelId,
+      modelId: resolvedModelId,
       supportsFiles: supportsFilesFlag,
       imageParts: imageParts.length,
       pdfParts: pdfParts.length,
@@ -382,7 +408,7 @@ export const generateSubtasks = async ({ task, ancestors = [], conversation = []
     parsed = parseJsonContent(content);
   } catch (err) {
     console.error('[generateSubtasks] Failed to parse model response', {
-      modelId,
+      modelId: resolvedModelId,
       preview: (content || '').slice(0, 200),
       error: err?.message || err
     });
@@ -399,15 +425,18 @@ export const generateSubtasks = async ({ task, ancestors = [], conversation = []
     return { items: mapped, usage, modelUsed, totalCostUsd };
   } catch (err) {
     console.error('[generateSubtasks] Failed to map model items', {
-      modelId,
+      modelId: resolvedModelId,
       error: err?.message || err
     });
     throw attachBillingContext(err, billing);
   }
 };
 
-export const chatWithPlanner = async ({ prompt, tasks, globalInstruction, selectedTaskId, modelId, clientLocalDate, clientTimeZone }) => {
-  const supportsFilesFlag = supportsFiles(modelId);
+export const chatWithPlanner = async ({ prompt, tasks, globalInstruction, selectedTaskId, modelId, webSearchEnabled, clientLocalDate, clientTimeZone }) => {
+  const resolvedWebSearchEnabled =
+    typeof webSearchEnabled === 'boolean' ? webSearchEnabled : hasOnlineSuffix(modelId || '');
+  const resolvedModelId = applyWebSearchSetting(modelId, resolvedWebSearchEnabled);
+  const supportsFilesFlag = supportsFiles(resolvedModelId);
   const now = new Date();
   const todayStr = clientLocalDate || formatDate(now);
   const flatten = (list, depth = 0, orderRef = { value: 0 }) =>
@@ -448,7 +477,8 @@ export const chatWithPlanner = async ({ prompt, tasks, globalInstruction, select
     supportsFilesFlag ? 'Only inspect attachments when the user explicitly needs information from files.' : 'NOTE: You are using a text-only model and cannot access file attachments. If a question requires file content, politely explain you cannot open files and suggest the user upgrade to a multimodal model or paste relevant content into task descriptions.',
     'Do not add conversational padding to factual answers. Be precise and direct.',
     'IMPORTANT: Do not use markdown formatting (no **bold**, *italics*, # headers, etc.). Use plain text only.',
-    globalInstruction ? `Global instruction: ${globalInstruction}` : ''
+    globalInstruction ? `Global instruction: ${globalInstruction}` : '',
+    resolvedWebSearchEnabled ? WEB_SEARCH_GUIDANCE : ''
   ]
     .filter(Boolean)
     .join(' ');
@@ -487,7 +517,7 @@ export const chatWithPlanner = async ({ prompt, tasks, globalInstruction, select
           { role: 'system', content: 'You select attachments to open. Return only JSON with a files array.' },
           { role: 'user', content: selectionPrompt }
         ],
-        modelId
+        modelId: resolvedModelId
       });
       const parsed = parseJsonContent(selection.content);
       console.log('[ai/chat] file selection response:', selection.content);
@@ -559,7 +589,7 @@ export const chatWithPlanner = async ({ prompt, tasks, globalInstruction, select
       { role: 'system', content: `${system} ${clientTimeZone ? `Assume user's timezone: ${clientTimeZone}.` : ''}` },
       { role: 'user', content: userContent }
     ],
-    modelId,
+    modelId: resolvedModelId,
     plugins: supportsFilesFlag && pdfParts.length > 0 ? [{ id: 'file-parser' }] : undefined
   });
 

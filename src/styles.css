@@ -142,6 +142,19 @@ pre, code {
   max-width: 680px;
   margin: 0 auto;
 }
+.settings-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+.settings-toggle input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  padding: 0;
+  flex: 0 0 auto;
+  cursor: pointer;
+}
 .loading-screen {
   min-height: 100vh;
   display: flex;

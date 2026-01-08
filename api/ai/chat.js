@@ -2,7 +2,7 @@ import { chatWithPlanner } from '../../server/ai.js';
 import { getBalance, chargeUsage } from '../../server/billing.js';
 import { sendJson, readJson } from '../_lib/http.js';
 import { logRequest } from '../_lib/log.js';
-import { isFreeModel } from '../../shared/model-config.js';
+import { applyWebSearchSetting, isFreeModel } from '../../shared/model-config.js';
 
 export default async function handler(req, res) {
   logRequest(req, res);
@@ -10,14 +10,15 @@ export default async function handler(req, res) {
     return sendJson(res, 405, { error: 'Method not allowed' });
   }
   try {
-    const { prompt, tasks, globalInstruction, selectedTaskId, modelId, userId } = await readJson(req);
+    const { prompt, tasks, globalInstruction, selectedTaskId, modelId, webSearchEnabled, userId } = await readJson(req);
     if (!userId) return sendJson(res, 400, { error: 'Missing userId' });
-    const isFree = isFreeModel(modelId);
+    const resolvedModelId = applyWebSearchSetting(modelId, webSearchEnabled);
+    const isFree = isFreeModel(resolvedModelId);
     if (!isFree) {
       const bal = await getBalance(userId);
       if (bal < 50) return sendJson(res, 402, { error: 'Minimum balance of $0.50 required to use AI features' });
     }
-    const result = await chatWithPlanner({ prompt, tasks, globalInstruction, selectedTaskId, modelId });
+    const result = await chatWithPlanner({ prompt, tasks, globalInstruction, selectedTaskId, modelId: resolvedModelId, webSearchEnabled });
     if (!isFree && result.totalCostUsd > 0) {
       const amountCents = Math.ceil(result.totalCostUsd * 100 * 2); // double charge (100% margin)
       await chargeUsage({
