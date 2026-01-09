@@ -102,6 +102,17 @@ const isDueTodayOrPast = (dueDate?: string, todayUtc?: number) => {
   const resolvedTodayUtc = typeof todayUtc === 'number' ? todayUtc : resolveTodayUtc(null);
   return due <= resolvedTodayUtc;
 };
+const isDueTomorrowOrPast = (dueDate?: string, todayUtc?: number) => {
+  if (!dueDate) return false;
+  const trimmed = dueDate.trim();
+  if (!trimmed) return false;
+  const [y, m, d] = trimmed.split('-').map((p) => parseInt(p, 10));
+  const due = !Number.isNaN(y) && !Number.isNaN(m) && !Number.isNaN(d) ? Date.UTC(y, m - 1, d) : Date.parse(trimmed);
+  if (Number.isNaN(due)) return false;
+  const resolvedTodayUtc = typeof todayUtc === 'number' ? todayUtc : resolveTodayUtc(null);
+  const tomorrowUtc = resolvedTodayUtc + 24 * 60 * 60 * 1000;
+  return due <= tomorrowUtc;
+};
 
 const copyTextToClipboard = async (text: string) => {
   if (!text) return;
@@ -1310,9 +1321,10 @@ const App = () => {
     walk(tasks);
     return {
       total: all.length,
+      dueByTomorrow: all.filter((t) => isDueTomorrowOrPast(t.dueDate, todayUtc)).length,
       hasContext: all.some((t) => t.attachments.length > 0 || t.description)
     };
-  }, [tasks]);
+  }, [tasks, todayUtc]);
 
   const handleCopyTasks = async (view: 'tree' | 'list') => {
     const text = view === 'list' ? buildListViewText(tasks) : buildTaskListText(tasks);
@@ -1626,8 +1638,12 @@ const App = () => {
   };
 
   const updateWebSearchSetting = (enabled: boolean) => {
+    const saveToken = Date.now();
+    const updatedModelId = getValidModelOrDefault(applyWebSearchSetting(modelId, enabled));
+    lastUserActionRef.current = saveToken;
     setWebSearchEnabled(enabled);
-    setModelId((prev) => getValidModelOrDefault(applyWebSearchSetting(prev, enabled)));
+    setModelId(updatedModelId);
+    enqueueSave({ config: { webSearchEnabled: enabled, modelId: updatedModelId } }, saveToken);
   };
 
   const renderSettingsContent = (onDone: () => void) => {
@@ -2004,17 +2020,17 @@ const App = () => {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-xs)' }}>
               <div>
                 <span>Tasks</span>
-                <strong style={{ marginLeft: 4 }}>{stats.total}</strong>
+                <strong style={{ marginLeft: 4 }}>{stats.dueByTomorrow}/{stats.total}</strong>
               </div>
               <div className="balance-row">
                 <span>Balance</span>
                 <div className="balance-amount">
+                  <strong>{formatCurrency(balanceDisplayCents)}</strong>
                   {balanceDeltaCents !== null && (
                     <span key={balanceDeltaKey} className="balance-delta" style={balanceDeltaStyle}>
                       -{formatCurrency(balanceDeltaCents)}
                     </span>
                   )}
-                  <strong>{formatCurrency(balanceDisplayCents)}</strong>
                 </div>
               </div>
             </div>
