@@ -1319,9 +1319,10 @@ const App = () => {
       });
     };
     walk(tasks);
+    const openTasks = all.filter((t) => (t.status || 'open') !== 'done');
     return {
-      total: all.length,
-      dueByTomorrow: all.filter((t) => isDueTomorrowOrPast(t.dueDate, todayUtc)).length,
+      total: openTasks.length,
+      dueByTomorrow: openTasks.filter((t) => isDueTomorrowOrPast(t.dueDate, todayUtc)).length,
       hasContext: all.some((t) => t.attachments.length > 0 || t.description)
     };
   }, [tasks, todayUtc]);
