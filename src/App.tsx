@@ -1643,7 +1643,7 @@ const App = () => {
     lastUserActionRef.current = saveToken;
     setWebSearchEnabled(enabled);
     setModelId(updatedModelId);
-    enqueueSave({ config: { webSearchEnabled: enabled, modelId: updatedModelId } }, saveToken);
+    enqueueSave({ config: { globalInstruction, webSearchEnabled: enabled, modelId: updatedModelId } }, saveToken);
   };
 
   const renderSettingsContent = (onDone: () => void) => {
