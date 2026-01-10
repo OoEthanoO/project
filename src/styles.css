@@ -448,6 +448,16 @@ pre, code {
   justify-content: space-between;
   gap: var(--space-sm);
 }
+.task-stats-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}
+.task-stats-value {
+  min-width: 72px;
+  text-align: right;
+}
 .balance-amount {
   position: relative;
   display: inline-flex;
@@ -1021,6 +1031,21 @@ textarea {
 }
 .auth-actions button {
   flex: 1 1 160px;
+}
+.auth-resend {
+  margin-top: var(--space-sm);
+  background: none;
+  border: none;
+  padding: 0;
+  color: #5bd0ff;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.auth-resend:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  text-decoration: none;
 }
 .subtasks {
   margin-left: 12px;

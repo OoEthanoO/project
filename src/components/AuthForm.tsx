@@ -3,11 +3,12 @@ import { FormEvent, useState } from 'react';
 type Props = {
   onLogin: (email: string, password: string, remember: boolean) => Promise<void> | void;
   onRegister: (email: string, password: string, name: string, remember: boolean) => Promise<void> | void;
+  onResendVerification?: (email: string) => Promise<string | void> | string | void;
   notice?: string;
   onClearNotice?: () => void;
 };
 
-const AuthForm = ({ onLogin, onRegister, notice, onClearNotice }: Props) => {
+const AuthForm = ({ onLogin, onRegister, onResendVerification, notice, onClearNotice }: Props) => {
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
@@ -15,6 +16,7 @@ const AuthForm = ({ onLogin, onRegister, notice, onClearNotice }: Props) => {
   const [remember, setRemember] = useState(true);
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
+  const [resendBusy, setResendBusy] = useState(false);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -46,6 +48,21 @@ const AuthForm = ({ onLogin, onRegister, notice, onClearNotice }: Props) => {
       } else {
         setError(message);
       }
+    }
+  };
+
+  const handleResend = async () => {
+    if (!email.trim() || !onResendVerification) return;
+    setError('');
+    setInfo('');
+    setResendBusy(true);
+    try {
+      const message = await onResendVerification(email.trim());
+      setInfo(message || 'If that email exists, a verification email has been sent.');
+    } catch (err) {
+      setError((err as Error).message || 'Failed to resend verification email');
+    } finally {
+      setResendBusy(false);
     }
   };
 
@@ -137,6 +154,16 @@ const AuthForm = ({ onLogin, onRegister, notice, onClearNotice }: Props) => {
               {mode === 'login' ? 'Need an account?' : 'Have an account?'}
             </button>
           </div>
+          {mode === 'login' && onResendVerification && (
+            <button
+              className="auth-resend"
+              type="button"
+              onClick={handleResend}
+              disabled={!email.trim() || resendBusy}
+            >
+              {resendBusy ? 'Sending verification email…' : 'Resend verification email'}
+            </button>
+          )}
         </form>
       </div>
     </div>

@@ -12,7 +12,7 @@ import { ChatMessage, TaskNode } from './types';
 import { addChild, findTask, randomId, removeTask, reorderWithinParent, updateTask, getR2KeysForTask, getAncestors, moveTaskToTop, moveTaskToBottom, updateAncestorStatuses } from './lib/task-utils';
 import { abortAiSplit, chatWithPlanner, generateSubtasks } from './lib/ai';
 import AuthForm from './components/AuthForm';
-import { currentUser, login, logout, register } from './lib/auth';
+import { currentUser, login, logout, register, resendVerification } from './lib/auth';
 import { fetchState, saveState } from './lib/state';
 import { fetchBalance, topUp } from './lib/billing';
 import { createCheckoutSession } from './lib/payments';
@@ -1223,6 +1223,10 @@ const App = () => {
     setAuthNotice('');
   };
 
+  const handleResendVerification = async (email: string) => {
+    return resendVerification(email);
+  };
+
   const handleLogout = () => {
     logout();
     setUser(null);
@@ -1886,7 +1890,15 @@ const App = () => {
   };
 
   if (!user) {
-    return <AuthForm onLogin={handleAuthLogin} onRegister={handleAuthRegister} notice={authNotice} onClearNotice={() => setAuthNotice('')} />;
+    return (
+      <AuthForm
+        onLogin={handleAuthLogin}
+        onRegister={handleAuthRegister}
+        onResendVerification={handleResendVerification}
+        notice={authNotice}
+        onClearNotice={() => setAuthNotice('')}
+      />
+    );
   }
   if (!hydrated) {
     return (
@@ -2019,9 +2031,9 @@ const App = () => {
         <div className="header-actions">
           <div className="pill info-card">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-xs)' }}>
-              <div>
+              <div className="task-stats-row">
                 <span>Tasks</span>
-                <strong style={{ marginLeft: 4 }}>{stats.dueByTomorrow}/{stats.total}</strong>
+                <strong className="task-stats-value">{stats.dueByTomorrow}/{stats.total}</strong>
               </div>
               <div className="balance-row">
                 <span>Balance</span>

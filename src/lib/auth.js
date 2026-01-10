@@ -60,6 +60,10 @@ export const login = async (email, password, remember) => {
     saveSession({ token: user.token, user }, remember);
     return user;
 };
+export const resendVerification = async (email) => {
+    const resp = await callAuth('/resend', { email });
+    return resp?.message || 'If that email exists, a verification email has been sent.';
+};
 export const logout = () => {
     saveSession(null, false);
 };

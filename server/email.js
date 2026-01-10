@@ -2,12 +2,17 @@ import { Resend } from 'resend';
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
 const RESEND_FROM = process.env.RESEND_FROM || 'no-reply@notifications.ethanyanxu.com';
-const APP_BASE_URL = process.env.APP_BASE_URL || 'http://localhost:5173';
+const RAW_APP_BASE_URL = process.env.APP_BASE_URL || 'http://localhost:5173';
+const RAW_API_BASE_URL = process.env.API_BASE_URL || RAW_APP_BASE_URL;
+const withScheme = (value) =>
+  value.startsWith('http://') || value.startsWith('https://') ? value : `http://${value}`;
+const APP_BASE_URL = withScheme(RAW_APP_BASE_URL).replace(/\/+$/, '');
+const API_BASE_URL = withScheme(RAW_API_BASE_URL).replace(/\/+$/, '');
 
 const client = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
 
 export const sendVerificationEmail = async (to, token) => {
-  const verifyUrl = `${APP_BASE_URL}/api/auth/verify?token=${encodeURIComponent(token)}`;
+  const verifyUrl = `${API_BASE_URL}/api/auth/verify?token=${encodeURIComponent(token)}`;
   if (!client) {
     console.warn('Resend not configured; skipping email send.');
     console.warn(`[email] manual verification URL for ${to}: ${verifyUrl}`);

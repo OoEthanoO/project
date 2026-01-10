@@ -16,8 +16,11 @@ export default async function handler(req, res) {
   logRequest(req, res);
   if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
   try {
-    const url = new URL(req.url || '', 'http://localhost');
-    const token = url.searchParams.get('token');
+    const token = req?.query?.token || (() => {
+      if (!req?.url) return null;
+      const url = new URL(req.url, 'http://localhost');
+      return url.searchParams.get('token');
+    })();
     if (!token) return sendJson(res, 400, { error: 'Missing token' });
     const user = await prisma.user.findFirst({ where: { verificationToken: token } });
     if (!user) return sendJson(res, 400, { error: 'Invalid token' });

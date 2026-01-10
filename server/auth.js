@@ -70,3 +70,24 @@ export const loginUser = async (email, password) => {
   }
   return { id: user.id, email: user.email, name: user.name, balanceCents: user.balanceCents || 0, token: makeToken(), emailVerified: user.emailVerified };
 };
+
+export const resendVerification = async (email) => {
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (!user || user.emailVerified) {
+    return { ok: true, sent: false };
+  }
+  let token = user.verificationToken;
+  if (!token) {
+    token = crypto.randomUUID();
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { verificationToken: token }
+    });
+  }
+  try {
+    await sendVerificationEmail(user.email, token);
+  } catch (err) {
+    console.error('Failed to send verification email', err);
+  }
+  return { ok: true, sent: true };
+};

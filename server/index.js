@@ -2,7 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import { chatWithPlanner, generateSubtasks } from './ai.js';
-import { loginUser, registerUser } from './auth.js';
+import { loginUser, registerUser, resendVerification } from './auth.js';
 import { getUserState, saveUserState } from './state.js';
 import { getBalance, topUpBalance, chargeUsage } from './billing.js';
 import { createCheckoutSession, handleStripeWebhook } from './stripe.js';
@@ -237,6 +237,18 @@ app.post('/api/auth/login', async (req, res) => {
   } catch (err) {
     console.error('[api/auth/login] error', err);
     res.status(400).json({ error: (err && err.message) || 'Login failed' });
+  }
+});
+
+app.post('/api/auth/resend', async (req, res) => {
+  try {
+    const { email } = req.body || {};
+    if (!email) return res.status(400).json({ error: 'Missing email' });
+    await resendVerification(email);
+    return res.json({ message: 'If that email exists, a verification email has been sent.' });
+  } catch (err) {
+    console.error('[api/auth/resend] error', err);
+    res.status(400).json({ error: (err && err.message) || 'Resend failed' });
   }
 });
 
