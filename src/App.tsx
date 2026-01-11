@@ -46,16 +46,15 @@ const parseDateInput = (value?: string | null) => {
   const month = Number(match[2]);
   const day = Number(match[3]);
   if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
-  const utc = Date.UTC(year, month - 1, day);
-  const check = new Date(utc);
-  if (check.getUTCFullYear() !== year || check.getUTCMonth() !== month - 1 || check.getUTCDate() !== day) return null;
-  return { value: `${match[1]}-${match[2]}-${match[3]}`, utc };
+  const localMidnight = new Date(year, month - 1, day);
+  if (localMidnight.getFullYear() !== year || localMidnight.getMonth() !== month - 1 || localMidnight.getDate() !== day) return null;
+  return { value: `${match[1]}-${match[2]}-${match[3]}`, utc: localMidnight.getTime() };
 };
 const resolveTodayUtc = (override?: string | null) => {
   const parsed = parseDateInput(override);
   if (parsed) return parsed.utc;
   const now = new Date();
-  return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
 };
 const resolveClientLocalDate = (override?: string | null) => {
   const parsed = parseDateInput(override);
@@ -97,7 +96,7 @@ const isDueTodayOrPast = (dueDate?: string, todayUtc?: number) => {
   const trimmed = dueDate.trim();
   if (!trimmed) return false;
   const [y, m, d] = trimmed.split('-').map((p) => parseInt(p, 10));
-  const due = !Number.isNaN(y) && !Number.isNaN(m) && !Number.isNaN(d) ? Date.UTC(y, m - 1, d) : Date.parse(trimmed);
+  const due = !Number.isNaN(y) && !Number.isNaN(m) && !Number.isNaN(d) ? new Date(y, m - 1, d).getTime() : Date.parse(trimmed);
   if (Number.isNaN(due)) return false;
   const resolvedTodayUtc = typeof todayUtc === 'number' ? todayUtc : resolveTodayUtc(null);
   return due <= resolvedTodayUtc;
@@ -107,10 +106,11 @@ const isDueTomorrowOrPast = (dueDate?: string, todayUtc?: number) => {
   const trimmed = dueDate.trim();
   if (!trimmed) return false;
   const [y, m, d] = trimmed.split('-').map((p) => parseInt(p, 10));
-  const due = !Number.isNaN(y) && !Number.isNaN(m) && !Number.isNaN(d) ? Date.UTC(y, m - 1, d) : Date.parse(trimmed);
+  const due = !Number.isNaN(y) && !Number.isNaN(m) && !Number.isNaN(d) ? new Date(y, m - 1, d).getTime() : Date.parse(trimmed);
   if (Number.isNaN(due)) return false;
   const resolvedTodayUtc = typeof todayUtc === 'number' ? todayUtc : resolveTodayUtc(null);
-  const tomorrowUtc = resolvedTodayUtc + 24 * 60 * 60 * 1000;
+  const todayLocal = new Date(resolvedTodayUtc);
+  const tomorrowUtc = new Date(todayLocal.getFullYear(), todayLocal.getMonth(), todayLocal.getDate() + 1).getTime();
   return due <= tomorrowUtc;
 };
 

@@ -160,13 +160,12 @@ const isDueTodayOrPast = (dueDate?: string, todayUtc?: number) => {
   if (!dueDate) return false;
   const trimmed = dueDate.trim();
   if (!trimmed) return false;
-  // Normalize to UTC midnight to avoid timezone drift.
   const [y, m, d] = trimmed.split('-').map((p) => parseInt(p, 10));
-  const due = !Number.isNaN(y) && !Number.isNaN(m) && !Number.isNaN(d) ? Date.UTC(y, m - 1, d) : Date.parse(trimmed);
+  const due = !Number.isNaN(y) && !Number.isNaN(m) && !Number.isNaN(d) ? new Date(y, m - 1, d).getTime() : Date.parse(trimmed);
   if (Number.isNaN(due)) return false;
   if (typeof todayUtc !== 'number') {
     const now = new Date();
-    const fallbackUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+    const fallbackUtc = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
     return due <= fallbackUtc;
   }
   return due <= todayUtc;
@@ -175,7 +174,7 @@ const isDueTodayOrPast = (dueDate?: string, todayUtc?: number) => {
 const resolveTodayUtc = (todayUtc?: number) => {
   if (typeof todayUtc === 'number') return todayUtc;
   const now = new Date();
-  return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
 };
 
 const isDueOnOrBefore = (dueDate?: string, compareUtc?: number) => {
@@ -183,7 +182,7 @@ const isDueOnOrBefore = (dueDate?: string, compareUtc?: number) => {
   const trimmed = dueDate.trim();
   if (!trimmed) return false;
   const [y, m, d] = trimmed.split('-').map((p) => parseInt(p, 10));
-  const due = !Number.isNaN(y) && !Number.isNaN(m) && !Number.isNaN(d) ? Date.UTC(y, m - 1, d) : Date.parse(trimmed);
+  const due = !Number.isNaN(y) && !Number.isNaN(m) && !Number.isNaN(d) ? new Date(y, m - 1, d).getTime() : Date.parse(trimmed);
   if (Number.isNaN(due)) return false;
   return due <= compareUtc;
 };
@@ -284,7 +283,8 @@ const TaskNodeView = ({
   const descriptionText = task.description?.trim() ?? '';
   const hasDescription = descriptionText.length > 0;
   const hasMinBalance = (balanceCents ?? 0) >= 50;
-  const dueSoonUtc = resolveTodayUtc(todayUtc) + 24 * 60 * 60 * 1000;
+  const todayLocal = new Date(resolveTodayUtc(todayUtc));
+  const dueSoonUtc = new Date(todayLocal.getFullYear(), todayLocal.getMonth(), todayLocal.getDate() + 1).getTime();
   const hasDueSoonSelf = !isDone && isDueOnOrBefore(task.dueDate, dueSoonUtc);
   const hasDueSoonSubtask = hasOpenSubtaskDueSoon(task, dueSoonUtc);
   const hasDueSoonIndicator = hasDueSoonSelf || hasDueSoonSubtask;
