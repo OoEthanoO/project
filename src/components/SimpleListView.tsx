@@ -17,7 +17,6 @@ type Props = {
   onEditModeChange?: (isEditing: boolean) => void;
   onShowInTree?: (id: string) => void;
   userId?: string;
-  balanceCents?: number;
   todayUtc?: number;
 };
 
@@ -216,7 +215,7 @@ const uploadPendingAttachments = async (attachments: Attachment[], userId?: stri
   );
 };
 
-const SimpleListView = ({ tasks, onSplit, onAbortSplit, onDelete, onUpdate, planningIds = new Set(), onEditModeChange, onShowInTree, userId, balanceCents, todayUtc }: Props) => {
+const SimpleListView = ({ tasks, onSplit, onAbortSplit, onDelete, onUpdate, planningIds = new Set(), onEditModeChange, onShowInTree, userId, todayUtc }: Props) => {
   const flat = flattenTasks(tasks || []);
   const taskById = new Map(flat.map((task) => [task.id, task]));
   const taskComparator = compareTasks(taskById);
@@ -238,7 +237,6 @@ const SimpleListView = ({ tasks, onSplit, onAbortSplit, onDelete, onUpdate, plan
           onEditModeChange={onEditModeChange}
           onShowInTree={onShowInTree}
           userId={userId}
-          balanceCents={balanceCents}
           todayUtc={todayUtc}
         />
       ))}
@@ -256,7 +254,6 @@ const ListItem = ({
   onEditModeChange,
   onShowInTree,
   userId,
-  balanceCents,
   todayUtc
 }: {
   task: FlatTask;
@@ -268,7 +265,6 @@ const ListItem = ({
   onEditModeChange?: (isEditing: boolean) => void;
   onShowInTree?: (id: string) => void;
   userId?: string;
-  balanceCents?: number;
   todayUtc?: number;
 }) => {
   const [editing, setEditing] = useState(false);
@@ -294,17 +290,15 @@ const ListItem = ({
   const hasTitle = titleText.length > 0;
   const descriptionText = task.description?.trim() ?? '';
   const hasDescription = descriptionText.length > 0;
-  const hasMinBalance = (balanceCents ?? 0) >= 50;
-  const todayLocal = new Date(resolveTodayUtc(todayUtc));
+  const resolvedTodayUtc = resolveTodayUtc(todayUtc);
+  const todayLocal = new Date(resolvedTodayUtc);
   const dueSoonUtc = new Date(todayLocal.getFullYear(), todayLocal.getMonth(), todayLocal.getDate() + 1).getTime();
   const hasDueSoonSelf = !isDone && isDueOnOrBefore(task.dueDate, dueSoonUtc);
   const hasDueSoonSubtask = hasOpenSubtaskDueSoon(task, dueSoonUtc);
   const hasDueSoonIndicator = hasDueSoonSelf || hasDueSoonSubtask;
-  const splitDisabledReason = !hasMinBalance
-    ? 'Minimum $0.50 balance required to use AI features.'
-    : !canSplit
-      ? 'Due today or overdue; adjust due date before splitting.'
-      : undefined;
+  const splitDisabledReason = !canSplit
+    ? 'Due today or overdue; adjust due date before splitting.'
+    : undefined;
   const dueDateLabel = task.dueDate
     ? task.startDate ? `${task.startDate} to ${task.dueDate}` : task.dueDate
     : '';
@@ -404,10 +398,6 @@ const ListItem = ({
     if (!files) return;
     if (!userId) {
       setAttachError('You must be logged in to upload files.');
-      return;
-    }
-    if (!hasMinBalance) {
-      setAttachError('File uploads require a minimum balance of $0.50. Please top up your account.');
       return;
     }
     const allowed = ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'gif'];
@@ -659,13 +649,7 @@ const ListItem = ({
               handleFiles(e.target.files);
               e.target.value = '';
             }}
-            disabled={!hasMinBalance}
           />
-          {!hasMinBalance && (
-            <p className="muted" style={{ color: '#f88', fontSize: 12, margin: '4px 0' }}>
-              File uploads require a minimum balance of $0.50. Please top up your account.
-            </p>
-          )}
           <p className="muted" style={{ fontSize: 12, margin: '4px 0' }}>
             Supported: PDF, JPG, JPEG, PNG, WEBP, GIF. Maximum 10 MB per file.
           </p>
@@ -729,7 +713,7 @@ const ListItem = ({
                   setShowMobileModal(false);
                   onSplit(task.id);
                 }}
-                disabled={!hasMinBalance || !canSplit || isDone || planningIds?.has(task.id)}
+                disabled={!canSplit || isDone || planningIds?.has(task.id)}
                 title={splitDisabledReason}
               >
                 {planningIds?.has(task.id) ? 'Planning…' : 'AI split'}
@@ -840,7 +824,7 @@ const ListItem = ({
                 setContextMenu(null);
                 onSplit(task.id);
               }}
-              disabled={!hasMinBalance || !canSplit || isDone || planningIds?.has(task.id)}
+              disabled={!canSplit || isDone || planningIds?.has(task.id)}
               title={splitDisabledReason}
             >
               {planningIds?.has(task.id) ? 'Planning…' : '🤖 AI split'}

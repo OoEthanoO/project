@@ -3,13 +3,29 @@
  * Change the model here and it will be reflected everywhere in the app.
  */
 
+export const MIMO_BASE_MODEL = 'xiaomi/mimo-v2-flash:free';
+const MIMO_PRICING = { in: 0, out: 0 };
 const GEMINI_PRICING = { in: 2, out: 12 };
 const GEMINI_PRICING_TIERS = [
   { maxPromptTokens: 200000, maxCompletionTokens: 200000, in: 2, out: 12 },
   { maxPromptTokens: Infinity, maxCompletionTokens: Infinity, in: 4, out: 18 }
 ];
-const GEMINI_BASE_MODEL = 'google/gemini-3-pro-preview';
+export const GEMINI_BASE_MODEL = 'google/gemini-3-pro-preview';
 export const MODEL_TIERS = [
+  {
+    id: MIMO_BASE_MODEL,
+    label: 'MiMo-V2-Flash',
+    note: 'MiMo-V2-Flash via OpenRouter; free to use.',
+    multimodal: false,
+    pricing: MIMO_PRICING
+  },
+  {
+    id: `${MIMO_BASE_MODEL}:online`,
+    label: 'MiMo-V2-Flash',
+    note: 'MiMo-V2-Flash via OpenRouter; supports web search.',
+    multimodal: false,
+    pricing: MIMO_PRICING
+  },
   {
     id: `${GEMINI_BASE_MODEL}:online`,
     label: 'Gemini 3 Pro Preview',
@@ -40,12 +56,16 @@ export const ensureOnlineSuffix = (modelId = '') => {
 export const applyWebSearchSetting = (modelId, enabled) => {
   if (!modelId) return modelId;
   if (typeof enabled !== 'boolean') return modelId;
-  return enabled ? ensureOnlineSuffix(modelId) : stripOnlineSuffix(modelId);
+  const base = stripOnlineSuffix(modelId);
+  if (!enabled) return base;
+  const candidate = ensureOnlineSuffix(base);
+  return MODEL_TIERS.some((tier) => tier.id === candidate) ? candidate : base;
 };
 
 // Helper functions for easy access
 export const getModelById = (modelId) => MODEL_TIERS.find((t) => t.id === modelId);
-export const getDefaultModel = () => MODEL_TIERS[0];
+const DEFAULT_MODEL_ID = MIMO_BASE_MODEL; // Switch to GEMINI by setting to `${GEMINI_BASE_MODEL}:online`.
+export const getDefaultModel = () => MODEL_TIERS.find((t) => t.id === DEFAULT_MODEL_ID) || MODEL_TIERS[0];
 export const isFreeModel = (modelId) => {
   const tier = getModelById(modelId);
   if (!tier) return false;

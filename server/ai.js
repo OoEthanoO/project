@@ -238,6 +238,18 @@ export const generateSubtasks = async ({ task, ancestors = [], conversation = []
       return `${label}: ${item.title || '(untitled)'}\nDescription: ${description}\nAttachments: ${attachmentsText}`;
     })
     .join('\n\n');
+  const existingSubtaskLines = (task.children || [])
+    .map((child) => {
+      const title = child.title || '(untitled)';
+      const status = child.status || 'open';
+      const due = child.dueDate ?? 'none';
+      const description = (child.description || '').replace(/\s+/g, ' ').trim();
+      const createdBy = child.createdBy || 'user';
+      const parts = [`- ${title}`, `status: ${status}`, `due: ${due}`, `by: ${createdBy}`];
+      if (description) parts.push(`notes: ${description.slice(0, 120)}`);
+      return parts.join(' | ');
+    })
+    .join('\n');
   const attachmentContext = lineageAttachments
     .filter((a) => a.content && a.extractionStatus === 'ok')
     .map((a) => `${a.parentTitle} - ${a.name || 'file'}:\n${a.content || ''}`)
@@ -329,6 +341,7 @@ export const generateSubtasks = async ({ task, ancestors = [], conversation = []
     'If work is in units (pages/chapters/problems), group units into a manageable number of subtasks rather than daily slices.',
     'Prefer fewer, higher-impact steps; the user can further split subtasks later if they want daily action items.',
     'IMPORTANT: Ensure completeness and symmetry. If you create a subtask for "first half" or "part 1" of something, you MUST also create corresponding subtasks for "second half" or remaining parts. Never leave partial work incomplete.',
+    'Respect existing subtasks under the current task. Do NOT recreate work already completed (status done) or duplicate in-progress/open subtasks; plan only what remains.',
     supportsFilesFlag
       ? 'Treat attachments as ground truth for progress. If files show partially or fully completed work (e.g., first half of a table already filled), do NOT plan that work again—start from what remains even if the description omits it. If the deliverable already looks complete, focus on polish/review/submit instead of redoing it.'
       : 'No file access: rely on the task text for progress; do not assume extra context from attachments.',
@@ -349,6 +362,7 @@ export const generateSubtasks = async ({ task, ancestors = [], conversation = []
     `Task due: ${task.dueDate ?? 'not provided'}`,
     `Task work days: ${formatWorkDays(taskWorkDays)}`,
     `Task description: ${task.description || 'none'}`,
+    existingSubtaskLines ? `Existing direct subtasks (respect status/progress):\n${existingSubtaskLines}` : 'Existing direct subtasks: none',
     `Attachments: ${lineageAttachments.map((a) => `${a.name || a.type || 'file'} (in ${a.parentTitle})`).join(', ') || 'none'}`,
     attachmentMetaText ? `Attachment details: ${attachmentMetaText}` : '',
     attachmentContext ? `Attachment excerpts:\n${attachmentContext}` : '',

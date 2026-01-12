@@ -22,11 +22,10 @@ type Props = {
   onToggleCollapsed?: (id: string) => void;
   highlightedTaskId?: string | null;
   userId?: string;
-  balanceCents?: number;
   todayUtc?: number;
   onboardingSplitTaskId?: string | null;
   onboardingShowSplit?: boolean;
-  onClearAiSubtasks?: (parentId: string) => void;
+  onClearIncompleteSubtasks?: (parentId: string) => void;
 };
 
 const copyTextToClipboard = async (text: string) => {
@@ -109,11 +108,10 @@ const TaskTree = ({
   onToggleCollapsed,
   highlightedTaskId,
   userId,
-  balanceCents,
   todayUtc,
   onboardingSplitTaskId,
   onboardingShowSplit,
-  onClearAiSubtasks
+  onClearIncompleteSubtasks
 }: Props) => {
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
   const [dragOverTaskId, setDragOverTaskId] = useState<string | null>(null);
@@ -140,11 +138,10 @@ const TaskTree = ({
           onToggleCollapsed={onToggleCollapsed}
           highlightedTaskId={highlightedTaskId}
           userId={userId}
-          balanceCents={balanceCents}
           todayUtc={todayUtc}
           onboardingSplitTaskId={onboardingSplitTaskId}
           onboardingShowSplit={onboardingShowSplit}
-          onClearAiSubtasks={onClearAiSubtasks}
+          onClearIncompleteSubtasks={onClearIncompleteSubtasks}
           draggedTaskId={draggedTaskId}
           setDraggedTaskId={setDraggedTaskId}
           dragOverTaskId={dragOverTaskId}
@@ -196,6 +193,8 @@ const hasOpenSubtaskDueSoon = (task: TaskNode, compareUtc?: number): boolean => 
   return false;
 };
 
+const isActiveStatus = (status?: TaskNode['status']) => (status ?? 'open') !== 'done';
+
 const TaskNodeView = ({
   task,
   depth,
@@ -213,7 +212,6 @@ const TaskNodeView = ({
   onToggleCollapsed,
   highlightedTaskId,
   userId,
-  balanceCents,
   draggedTaskId,
   setDraggedTaskId,
   dragOverTaskId,
@@ -221,7 +219,7 @@ const TaskNodeView = ({
   allTasks,
   onboardingSplitTaskId,
   onboardingShowSplit,
-  onClearAiSubtasks,
+  onClearIncompleteSubtasks,
   todayUtc
 }: {
   task: TaskNode;
@@ -240,7 +238,6 @@ const TaskNodeView = ({
   onToggleCollapsed?: (id: string) => void;
   highlightedTaskId?: string | null;
   userId?: string;
-  balanceCents?: number;
   draggedTaskId: string | null;
   setDraggedTaskId: (id: string | null) => void;
   dragOverTaskId: string | null;
@@ -248,7 +245,7 @@ const TaskNodeView = ({
   allTasks: TaskNode[];
   onboardingSplitTaskId?: string | null;
   onboardingShowSplit?: boolean;
-  onClearAiSubtasks?: (parentId: string) => void;
+  onClearIncompleteSubtasks?: (parentId: string) => void;
   todayUtc?: number;
 }) => {
   const [showSubForm, setShowSubForm] = useState(false);
@@ -282,17 +279,16 @@ const TaskNodeView = ({
   const hasTitle = titleText.length > 0;
   const descriptionText = task.description?.trim() ?? '';
   const hasDescription = descriptionText.length > 0;
-  const hasMinBalance = (balanceCents ?? 0) >= 50;
-  const todayLocal = new Date(resolveTodayUtc(todayUtc));
+  const resolvedTodayUtc = resolveTodayUtc(todayUtc);
+  const todayLocal = new Date(resolvedTodayUtc);
   const dueSoonUtc = new Date(todayLocal.getFullYear(), todayLocal.getMonth(), todayLocal.getDate() + 1).getTime();
   const hasDueSoonSelf = !isDone && isDueOnOrBefore(task.dueDate, dueSoonUtc);
   const hasDueSoonSubtask = hasOpenSubtaskDueSoon(task, dueSoonUtc);
   const hasDueSoonIndicator = hasDueSoonSelf || hasDueSoonSubtask;
-  const splitDisabledReason = !hasMinBalance
-    ? 'Minimum $0.50 balance required to use AI features.'
-    : !canSplit
-      ? 'Due today or overdue; adjust due date before splitting.'
-      : undefined;
+  const hasIncompleteSubtasks = (task.children || []).some((child) => isActiveStatus(child.status));
+  const splitDisabledReason = !canSplit
+    ? 'Due today or overdue; adjust due date before splitting.'
+    : undefined;
 
   console.log('TaskNodeView render - task:', task.id, 'editing:', editing);
 
@@ -372,10 +368,6 @@ const TaskNodeView = ({
     if (!files) return;
     if (!userId) {
       setAttachError('You must be logged in to upload files.');
-      return;
-    }
-    if (!hasMinBalance) {
-      setAttachError('File uploads require a minimum balance of $0.50. Please top up your account.');
       return;
     }
     const allowed = ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'gif'];
@@ -474,12 +466,12 @@ const TaskNodeView = ({
     void copyTextToClipboard(combined);
   };
 
-  const handleClearAiChildren = () => {
-    if (onClearAiSubtasks) {
-      onClearAiSubtasks(task.id);
+  const handleClearIncompleteChildren = () => {
+    if (onClearIncompleteSubtasks) {
+      onClearIncompleteSubtasks(task.id);
       return;
     }
-    onUpdate(task.id, { children: (task.children || []).filter((c) => c.createdBy !== 'ai') });
+    onUpdate(task.id, { children: (task.children || []).filter((c) => !isActiveStatus(c.status)) });
   };
 
   const openCopySubmenu = () => {
@@ -803,13 +795,7 @@ const TaskNodeView = ({
               handleFiles(e.target.files);
               e.target.value = '';
             }}
-            disabled={!hasMinBalance}
           />
-          {!hasMinBalance && (
-            <p className="muted" style={{ color: '#f88', fontSize: 12, margin: '4px 0' }}>
-              File uploads require a minimum balance of $0.50. Please top up your account.
-            </p>
-          )}
           <p className="muted" style={{ fontSize: 12, margin: '4px 0' }}>
             Supported: PDF, JPG, JPEG, PNG, WEBP, GIF. Maximum 10 MB per file.
           </p>
@@ -854,7 +840,7 @@ const TaskNodeView = ({
             <button
               className="primary"
               onClick={() => onSplit(task.id)}
-              disabled={!hasMinBalance || !canSplit || isDone || planningIds?.has(task.id)}
+              disabled={!canSplit || isDone || planningIds?.has(task.id)}
               title={splitDisabledReason}
             >
               {planningIds?.has(task.id) ? 'Planning…' : 'AI split'}
@@ -881,17 +867,17 @@ const TaskNodeView = ({
             </button>
           </>
         )}
-        {task.children?.some((c) => c.createdBy === 'ai') && (
+        {hasIncompleteSubtasks && (
           <button
             className="secondary"
             onClick={(e) => {
               e.stopPropagation();
-              const ok = window.confirm('Clear all AI-generated subtasks under this task?');
+              const ok = window.confirm('Clear all incomplete subtasks (open or in-progress) under this task? Completed subtasks stay.');
               if (!ok) return;
-              handleClearAiChildren();
+              handleClearIncompleteChildren();
             }}
           >
-            Clear AI subtasks
+            Clear Incomplete Subtasks
           </button>
         )}
       </div>
@@ -902,7 +888,6 @@ const TaskNodeView = ({
             parentId={task.id}
             onCancel={() => setShowSubForm(false)}
             userId={userId}
-            balanceCents={balanceCents}
           />
         </div>
       )}
@@ -926,7 +911,6 @@ const TaskNodeView = ({
               onToggleCollapsed={onToggleCollapsed}
               highlightedTaskId={highlightedTaskId}
               userId={userId}
-              balanceCents={balanceCents}
               draggedTaskId={draggedTaskId}
               setDraggedTaskId={setDraggedTaskId}
               dragOverTaskId={dragOverTaskId}
@@ -934,7 +918,7 @@ const TaskNodeView = ({
               allTasks={allTasks}
               onboardingSplitTaskId={onboardingSplitTaskId}
               onboardingShowSplit={onboardingShowSplit}
-              onClearAiSubtasks={onClearAiSubtasks}
+              onClearIncompleteSubtasks={onClearIncompleteSubtasks}
             />
           ))}
         </div>
@@ -979,7 +963,7 @@ const TaskNodeView = ({
                   setShowMobileModal(false);
                   onSplit(task.id);
                 }}
-                disabled={!hasMinBalance || !canSplit || isDone || planningIds?.has(task.id)}
+                disabled={!canSplit || isDone || planningIds?.has(task.id)}
                 title={splitDisabledReason}
                 data-onboarding={isOnboardingSplitTarget && onboardingShowSplit ? 'split-task' : undefined}
               >
@@ -1071,18 +1055,18 @@ const TaskNodeView = ({
               >
                 Delete
               </button>
-              {task.children?.some((c) => c.createdBy === 'ai') && (
+              {hasIncompleteSubtasks && (
                 <button
                   className="secondary"
                   onClick={(e) => {
                     e.stopPropagation();
-                    const ok = window.confirm('Clear all AI-generated subtasks under this task?');
+                    const ok = window.confirm('Clear all incomplete subtasks (open or in-progress) under this task? Completed subtasks stay.');
                     if (!ok) return;
                     setShowMobileModal(false);
-                    handleClearAiChildren();
+                    handleClearIncompleteChildren();
                   }}
                 >
-                  Clear AI subtasks
+                  Clear Incomplete Subtasks
                 </button>
               )}
               <button className="secondary" onClick={() => setShowMobileModal(false)}>
@@ -1121,7 +1105,7 @@ const TaskNodeView = ({
               setContextMenu(null);
               onSplit(task.id);
             }}
-            disabled={!hasMinBalance || !canSplit || isDone || planningIds?.has(task.id)}
+            disabled={!canSplit || isDone || planningIds?.has(task.id)}
             title={splitDisabledReason}
             data-onboarding={isOnboardingSplitTarget && onboardingShowSplit ? 'split-task' : undefined}
           >
@@ -1222,18 +1206,18 @@ const TaskNodeView = ({
           >
             🗑️ Delete
           </button>
-          {task.children?.some((c) => c.createdBy === 'ai') && (
+          {hasIncompleteSubtasks && (
             <button
               className="context-menu-item"
               onClick={(e) => {
                 e.stopPropagation();
-                const ok = window.confirm('Clear all AI-generated subtasks under this task?');
+                const ok = window.confirm('Clear all incomplete subtasks (open or in-progress) under this task? Completed subtasks stay.');
                 if (!ok) return;
                 setContextMenu(null);
-                handleClearAiChildren();
+                handleClearIncompleteChildren();
               }}
             >
-              🧹 Clear AI subtasks
+              🧹 Clear Incomplete Subtasks
             </button>
           )}
         </div>

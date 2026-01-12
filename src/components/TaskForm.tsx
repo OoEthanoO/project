@@ -10,10 +10,9 @@ type Props = {
   parentId?: string | null;
   onCancel?: () => void;
   userId?: string; // For R2 file uploads
-  balanceCents?: number; // For balance check
 };
 
-const TaskForm = ({ onSubmit, parentId = null, onCancel, userId, balanceCents = 0 }: Props) => {
+const TaskForm = ({ onSubmit, parentId = null, onCancel, userId }: Props) => {
   const [title, setTitle] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [startDate, setStartDate] = useState('');
@@ -23,8 +22,6 @@ const TaskForm = ({ onSubmit, parentId = null, onCancel, userId, balanceCents = 
   const [attachError, setAttachError] = useState('');
   const titleInputRef = useRef<HTMLInputElement>(null);
   
-  const hasMinBalance = balanceCents >= 50;
-
   useEffect(() => {
     // Auto-focus title input when form mounts
     titleInputRef.current?.focus();
@@ -34,10 +31,6 @@ const TaskForm = ({ onSubmit, parentId = null, onCancel, userId, balanceCents = 
     if (!files) return;
     if (!userId) {
       setAttachError('You must be logged in to upload files.');
-      return;
-    }
-    if (!hasMinBalance) {
-      setAttachError('File uploads require a minimum balance of $0.50. Please top up your account.');
       return;
     }
     const allowed = ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'gif'];
@@ -189,13 +182,7 @@ const TaskForm = ({ onSubmit, parentId = null, onCancel, userId, balanceCents = 
           accept=".pdf,.jpg,.jpeg,.png,.webp,.gif"
           multiple
           onChange={(e) => handleFiles(e.target.files)}
-          disabled={!hasMinBalance}
         />
-        {!hasMinBalance && (
-          <p className="muted" style={{ color: '#f88', fontSize: 12, margin: '4px 0' }}>
-            File uploads require a minimum balance of $0.50. Please top up your account.
-          </p>
-        )}
         <p className="muted" style={{ fontSize: 12, margin: '4px 0' }}>
           Supported: PDF, JPG, JPEG, PNG, WEBP, GIF. Maximum 10 MB per file. Convert other files (e.g., DOCX/PPTX) to PDF before attaching.
         </p>

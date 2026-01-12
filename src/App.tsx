@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import type { CSSProperties, SyntheticEvent } from 'react';
+import type { SyntheticEvent } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import TaskForm from './components/TaskForm';
 import TaskTree from './components/TaskTree';
@@ -10,18 +10,16 @@ import ChatPanel from './components/ChatPanel';
 import AdminPanel from './components/AdminPanel';
 import { ChatMessage, TaskNode } from './types';
 import { addChild, findTask, randomId, removeTask, reorderWithinParent, updateTask, getR2KeysForTask, getAncestors, moveTaskToTop, moveTaskToBottom, updateAncestorStatuses } from './lib/task-utils';
-import { abortAiSplit, chatWithPlanner, generateSubtasks } from './lib/ai';
 import AuthForm from './components/AuthForm';
 import { currentUser, login, logout, register, resendVerification } from './lib/auth';
 import { fetchState, saveState } from './lib/state';
-import { fetchBalance, topUp } from './lib/billing';
-import { createCheckoutSession } from './lib/payments';
 import {
   applyWebSearchSetting,
+  stripOnlineSuffix,
   getDefaultModel,
   getValidModelOrDefault,
-  getModelById,
-  hasOnlineSuffix
+  hasOnlineSuffix,
+  GEMINI_BASE_MODEL
 } from '../shared/model-config.js';
 import { getAvailableBackups, restoreFromBackup, clearBackup } from './lib/backup-recovery.js';
 import { formatWorkDays } from './lib/work-days';
@@ -83,6 +81,19 @@ type SavePayload = {
     collapsedTaskIds?: string[];
   };
 };
+
+type ManualAiRequest =
+  | {
+      type: 'split';
+      prompt: string;
+      taskId: string;
+      taskTitle: string;
+      requestToken: number;
+    }
+  | {
+      type: 'chat';
+      prompt: string;
+    };
 
 type FlatListTask = TaskNode & {
   depth: number;
@@ -174,6 +185,146 @@ const buildTaskListText = (tasks: TaskNode[]) => {
   };
   walk(tasks, 0);
   return lines.join('\n');
+};
+
+const parseModelJson = (raw: string) => {
+  const text = (raw || '').trim();
+  if (!text) throw new Error('Output is empty.');
+  const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const candidate = fenceMatch ? fenceMatch[1] : text;
+  const tryParse = (value: string) => {
+    try {
+      return { ok: true, value: JSON.parse(value) };
+    } catch {
+      return { ok: false, value: null };
+    }
+  };
+  const direct = tryParse(candidate);
+  if (direct.ok) return direct.value;
+  const firstBrace = candidate.indexOf('{');
+  const lastBrace = candidate.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    const sliced = candidate.slice(firstBrace, lastBrace + 1);
+    const parsed = tryParse(sliced);
+    if (parsed.ok) return parsed.value;
+  }
+  const firstBracket = candidate.indexOf('[');
+  const lastBracket = candidate.lastIndexOf(']');
+  if (firstBracket !== -1 && lastBracket !== -1 && lastBracket > firstBracket) {
+    const sliced = candidate.slice(firstBracket, lastBracket + 1);
+    const parsed = tryParse(sliced);
+    if (parsed.ok) return parsed.value;
+  }
+  throw new Error('Failed to parse JSON from model output.');
+};
+
+const formatLineageDetails = (lineage: TaskNode[]) => {
+  return lineage
+    .map((item, index) => {
+      const label = index === 0 ? 'Root task' : index === lineage.length - 1 ? 'Current task' : `Parent task ${index}`;
+      const title = item.title || '(untitled task)';
+      const description = (item.description || '').trim() || 'none';
+      const attachments = (item.attachments || []).length
+        ? item.attachments.map((a) => a.name || a.type || 'file').join(', ')
+        : 'none';
+      const workDays = item.workDays?.length ? formatWorkDays(item.workDays, 'long') : 'none';
+      return [
+        `${label}: ${title}`,
+        `Status: ${item.status || 'open'}`,
+        `Due: ${item.dueDate ?? 'none'}`,
+        `Start: ${item.startDate ?? 'none'}`,
+        `Work days: ${workDays}`,
+        `Description: ${description}`,
+        `Attachments: ${attachments}`
+      ].join('\n');
+    })
+    .join('\n\n');
+};
+
+const formatRecentChat = (conversation: ChatMessage[], limit = 4) => {
+  if (!conversation || conversation.length === 0) return '';
+  return conversation
+    .slice(-limit)
+    .map((message) => `${message.role === 'user' ? 'User' : 'AI'}: ${message.content}`)
+    .join('\n');
+};
+
+const resolveTomorrowDate = (todayText: string) => {
+  const parsed = parseDateInput(todayText);
+  const base = parsed ? new Date(parsed.utc) : new Date();
+  const tomorrow = new Date(base.getFullYear(), base.getMonth(), base.getDate() + 1);
+  return formatDateInput(tomorrow);
+};
+
+const buildManualSplitPrompt = ({
+  task,
+  ancestors,
+  conversation,
+  globalInstruction,
+  clientLocalDate
+}: {
+  task: TaskNode;
+  ancestors: TaskNode[];
+  conversation: ChatMessage[];
+  globalInstruction: string;
+  clientLocalDate: string;
+}) => {
+  const lineage = [...ancestors, task];
+  const lineageDetails = formatLineageDetails(lineage);
+  const subtreeText = buildTaskListText([task]);
+  const todayText = clientLocalDate || formatDateInput(new Date());
+  const tomorrowText = resolveTomorrowDate(todayText);
+  const rootWorkDays = ancestors.length ? ancestors[0]?.workDays : task.workDays;
+  const taskWorkDays = task.workDays;
+  const effectiveWorkDays = taskWorkDays?.length ? taskWorkDays : rootWorkDays;
+  const hasWorkDays = Boolean(rootWorkDays?.length || taskWorkDays?.length);
+  const recentChat = formatRecentChat(conversation);
+  const lines = [
+    'You are a planning assistant. Split the CURRENT task into concrete, milestone-based subtasks. Do NOT create a subtask for every day.',
+    'Use web search to verify current details, official syllabi, and topics when helpful.',
+    `Today: ${todayText}. Earliest allowed dueDate is ${tomorrowText}.`,
+    'Every subtask must include a dueDate (YYYY-MM-DD) after today. Use the task due date as the latest bound if provided.',
+    'Interpret due dates as deadlines at the start of that day (00:00).',
+    'Respect existing subtasks in the current task subtree. Do NOT recreate completed work; avoid duplicating any in-progress/open subtasks. Plan only the remaining work.',
+    hasWorkDays ? 'Work days indicate when the user can work. Because dueDate is a deadline at 00:00, due dates should be the day AFTER a work day.' : '',
+    rootWorkDays?.length ? `Root work days: ${formatWorkDays(rootWorkDays, 'long')}` : '',
+    taskWorkDays?.length ? `Current task work days: ${formatWorkDays(taskWorkDays, 'long')}` : '',
+    effectiveWorkDays?.length ? `Effective work days (use current if set, otherwise root): ${formatWorkDays(effectiveWorkDays, 'long')}` : '',
+    'Return ONLY JSON with shape: {"items":[{"title":"...", "description":"...", "dueDate":"YYYY-MM-DD"}]}',
+    globalInstruction ? `Global instruction: ${globalInstruction}` : '',
+    lineageDetails ? `Lineage context:\n${lineageDetails}` : '',
+    subtreeText ? `Current task subtree (includes existing subtasks):\n${subtreeText}` : '',
+    recentChat ? `Recent chat hints:\n${recentChat}` : ''
+  ]
+    .filter(Boolean)
+    .join('\n');
+  return lines;
+};
+
+const buildManualChatPrompt = ({
+  prompt,
+  tasks,
+  globalInstruction,
+  clientLocalDate
+}: {
+  prompt: string;
+  tasks: TaskNode[];
+  globalInstruction: string;
+  clientLocalDate: string;
+}) => {
+  const taskText = buildTaskListText(tasks);
+  const lines = [
+    'You are a helpful planning and study coach.',
+    'Respond in plain text only. Do not use markdown.',
+    'Use web search to verify current details, curricula, and schedules when helpful.',
+    globalInstruction ? `Global instruction: ${globalInstruction}` : '',
+    `Today: ${clientLocalDate}`,
+    taskText ? `Task context:\n${taskText}` : 'No tasks available.',
+    `User message: ${prompt}`
+  ]
+    .filter(Boolean)
+    .join('\n');
+  return lines;
 };
 
 const flattenTasksForList = (
@@ -296,6 +447,9 @@ const App = () => {
   const [collapsedTaskIds, setCollapsedTaskIds] = useState<Set<string>>(new Set());
   const [planningIds, setPlanningIds] = useState<Set<string>>(new Set());
   const [chatting, setChatting] = useState(false);
+  const [manualAiRequest, setManualAiRequest] = useState<ManualAiRequest | null>(null);
+  const [manualAiOutput, setManualAiOutput] = useState('');
+  const [manualAiError, setManualAiError] = useState<string | null>(null);
   const [showChat, setShowChat] = useState(false);
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [showInstructionModal, setShowInstructionModal] = useState(false);
@@ -304,18 +458,10 @@ const App = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([initialCoachMessage()]);
   const [user, setUser] = useState(() => currentUser());
   const [hydrated, setHydrated] = useState(false);
-  const [balanceCents, setBalanceCents] = useState<number>(0);
-  const [balanceDisplayCents, setBalanceDisplayCents] = useState<number>(0);
-  const [balanceDeltaCents, setBalanceDeltaCents] = useState<number | null>(null);
-  const [balanceDeltaKey, setBalanceDeltaKey] = useState(0);
-  const [showTopUpModal, setShowTopUpModal] = useState(false);
-  const [topUpAmount, setTopUpAmount] = useState('10'); // default $10
-  const [toppingUp, setToppingUp] = useState(false);
   const [serverVersion, setServerVersion] = useState<string | null>(null);
   const [authNotice, setAuthNotice] = useState('');
   const [isEditingTask, setIsEditingTask] = useState(false); // Track if any task is in edit mode
   const [backupAvailable, setBackupAvailable] = useState<any>(null); // Track if backup exists
-  const [splitAbortNotice, setSplitAbortNotice] = useState<string | null>(null);
   const [showAccountDropdown, setShowAccountDropdown] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState(0);
@@ -335,14 +481,7 @@ const App = () => {
   const saveInFlightRef = useRef(false);
   const pendingSaveRef = useRef<{ payload: SavePayload; saveToken: number } | null>(null);
   const splitRequestRef = useRef<Map<string, number>>(new Map());
-  const splitAbortRef = useRef<Map<string, { controller: AbortController; requestId: string }>>(new Map());
   const lastContentTabRef = useRef<'tree' | 'list' | 'trash'>('tree');
-  const balanceCentsRef = useRef(0);
-  const balanceAnimRef = useRef<number | null>(null);
-  const balanceDeltaTimeoutRef = useRef<number | null>(null);
-  const balanceAnimatingRef = useRef(false);
-  const balanceStartTimeoutRef = useRef<number | null>(null);
-  const splitAbortNoticeTimeoutRef = useRef<number | null>(null);
   // Prevent spamming version-update logs and duplicate reload timers
   const pendingReloadRef = useRef(false);
   const addTaskButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -356,8 +495,6 @@ const App = () => {
   const defaultWebSearchEnabled = hasOnlineSuffix(defaultModel);
   const [modelId, setModelId] = useState(defaultModel);
   const [webSearchEnabled, setWebSearchEnabled] = useState(defaultWebSearchEnabled);
-  const currentModel = getModelById(modelId);
-  const hasMinBalance = balanceCents >= 50;
   const todayUtc = useMemo(() => resolveTodayUtc(todayOverride), [todayOverride]);
   const clientLocalDate = useMemo(() => resolveClientLocalDate(todayOverride), [todayOverride]);
   const latestStateRef = useRef({
@@ -369,9 +506,6 @@ const App = () => {
     webSearchEnabled,
     collapsedTaskIds
   });
-  const BALANCE_DELTA_PAUSE_MS = 3000;
-  const formatCurrency = (cents: number) => `$${(cents / 100).toFixed(2)}`;
-  const balanceDeltaStyle = { '--balance-delta-delay': `${BALANCE_DELTA_PAUSE_MS}ms` } as CSSProperties;
   const [panelContextMenu, setPanelContextMenu] = useState<{ x: number; y: number; view: 'tree' | 'list' } | null>(null);
   const [treeFocusRequest, setTreeFocusRequest] = useState<{ id: string; token: number } | null>(null);
   const [highlightedTaskId, setHighlightedTaskId] = useState<string | null>(null);
@@ -392,56 +526,6 @@ const App = () => {
       console.error('Failed to save date override', err);
     }
   };
-  const clearBalanceDelta = () => {
-    if (balanceDeltaTimeoutRef.current) {
-      window.clearTimeout(balanceDeltaTimeoutRef.current);
-      balanceDeltaTimeoutRef.current = null;
-    }
-    if (balanceStartTimeoutRef.current) {
-      window.clearTimeout(balanceStartTimeoutRef.current);
-      balanceStartTimeoutRef.current = null;
-    }
-    setBalanceDeltaCents(null);
-  };
-  const animateBalanceDeduction = (fromCents: number, toCents: number) => {
-    if (fromCents <= toCents) {
-      balanceAnimatingRef.current = false;
-      setBalanceDisplayCents(toCents);
-      clearBalanceDelta();
-      return;
-    }
-    const delta = fromCents - toCents;
-    clearBalanceDelta();
-    setBalanceDeltaCents(delta);
-    setBalanceDeltaKey((key) => key + 1);
-    balanceAnimatingRef.current = true;
-    if (balanceAnimRef.current) {
-      cancelAnimationFrame(balanceAnimRef.current);
-    }
-    setBalanceDisplayCents(fromCents);
-    const duration = Math.min(1800, Math.max(700, delta * 12));
-    const startAnimation = () => {
-      const start = performance.now();
-      const step = (now: number) => {
-        const t = Math.min((now - start) / duration, 1);
-        const eased = 1 - Math.pow(1 - t, 3);
-        const current = Math.round(fromCents - delta * eased);
-        setBalanceDisplayCents(current);
-        if (t < 1) {
-          balanceAnimRef.current = requestAnimationFrame(step);
-        } else {
-          balanceAnimatingRef.current = false;
-          setBalanceDisplayCents(toCents);
-          balanceDeltaTimeoutRef.current = window.setTimeout(() => {
-            setBalanceDeltaCents(null);
-          }, 900);
-        }
-      };
-      balanceAnimRef.current = requestAnimationFrame(step);
-    };
-    balanceStartTimeoutRef.current = window.setTimeout(startAnimation, BALANCE_DELTA_PAUSE_MS);
-  };
-  
   const resolveTarget = (el: HTMLElement | null) => {
     if (!el) return null;
     const rect = el.getBoundingClientRect();
@@ -845,6 +929,7 @@ const App = () => {
         setGlobalInstruction('');
         setModelId(defaultModel);
         setWebSearchEnabled(defaultWebSearchEnabled);
+        setManualAiMode(false);
         setShowOnboarding(false);
         setOnboardingStep(0);
         return;
@@ -907,7 +992,10 @@ const App = () => {
         });
         setGlobalInstruction(state.config?.globalInstruction || '');
         const loadedModelId = state.config?.modelId || import.meta.env.VITE_OPENAI_MODEL || defaultModel;
-        const resolvedModelId = getValidModelOrDefault(loadedModelId);
+        const loadedBaseId = stripOnlineSuffix(loadedModelId);
+        const defaultBaseId = stripOnlineSuffix(defaultModel);
+        const shouldForceDefault = loadedBaseId === GEMINI_BASE_MODEL && defaultBaseId !== GEMINI_BASE_MODEL;
+        const resolvedModelId = getValidModelOrDefault(shouldForceDefault ? defaultModel : loadedModelId);
         const persistedWebSearch = state.config?.webSearchEnabled;
         const resolvedWebSearchEnabled =
           typeof persistedWebSearch === 'boolean' ? persistedWebSearch : hasOnlineSuffix(resolvedModelId);
@@ -918,12 +1006,6 @@ const App = () => {
         const incomingCollapsed = new Set<string>((state.config?.collapsedTaskIds || []) as string[]);
         if (Date.now() - lastUserActionRef.current > 800) {
           setCollapsedTaskIds(incomingCollapsed);
-        }
-        try {
-          const bal = await fetchBalance(user.id);
-          if (!cancelled) setBalanceCents(bal);
-        } catch (e) {
-          console.error('Failed to fetch balance', e);
         }
       } catch (err) {
         console.error('Failed to load state', err);
@@ -938,21 +1020,6 @@ const App = () => {
       cancelled = true;
     };
   }, [user]);
-
-  useEffect(() => {
-    balanceCentsRef.current = balanceCents;
-    if (!balanceAnimatingRef.current) {
-      setBalanceDisplayCents(balanceCents);
-    }
-  }, [balanceCents]);
-
-  useEffect(() => {
-    return () => {
-      if (balanceAnimRef.current) cancelAnimationFrame(balanceAnimRef.current);
-      if (balanceDeltaTimeoutRef.current) window.clearTimeout(balanceDeltaTimeoutRef.current);
-      if (balanceStartTimeoutRef.current) window.clearTimeout(balanceStartTimeoutRef.current);
-    };
-  }, []);
 
   const buildSavePayload = (overrides: Partial<SavePayload> = {}): SavePayload => {
     const base = latestStateRef.current;
@@ -1108,7 +1175,7 @@ const App = () => {
       cancelled = true;
       clearInterval(id);
     };
-  }, [serverVersion, showTaskModal, showInstructionModal, showSettingsModal, showTopUpModal, chatting, isEditingTask]);
+  }, [serverVersion, showTaskModal, showInstructionModal, showSettingsModal, chatting, isEditingTask]);
 
   // Lightweight polling to stay in sync across devices/browsers
   useEffect(() => {
@@ -1117,7 +1184,7 @@ const App = () => {
     const interval = setInterval(async () => {
       const startedAt = Date.now();
       // Don't poll if user is actively working (prevents interrupting task editing, chat, or other modals)
-      if (showTaskModal || showInstructionModal || showSettingsModal || showTopUpModal || chatting || isEditingTask) {
+      if (showTaskModal || showInstructionModal || showSettingsModal || chatting || isEditingTask) {
         return;
       }
       // If the user just modified tasks (e.g., rapid keyboard reorders), pause polling to avoid overwriting
@@ -1192,12 +1259,6 @@ const App = () => {
             return prevArray === newArray ? prev : newCollapsedIds;
           });
         }
-        try {
-          const bal = await fetchBalance(user.id);
-          setBalanceCents((prev) => prev === bal ? prev : bal);
-        } catch (e) {
-          console.error('Polling: failed to refresh balance', e);
-        }
       } catch (err) {
         consecutiveFailures += 1;
         // Log only the first failure to reduce console noise during auto-reloads or brief outages
@@ -1207,19 +1268,17 @@ const App = () => {
       }
     }, 10000); // 10s poll
     return () => clearInterval(interval);
-  }, [user, hydrated, showTaskModal, showInstructionModal, showSettingsModal, showTopUpModal, chatting, isEditingTask, defaultModel]);
+  }, [user, hydrated, showTaskModal, showInstructionModal, showSettingsModal, chatting, isEditingTask, defaultModel]);
 
   const handleAuthLogin = async (email: string, password: string, remember: boolean) => {
     const u = await login(email, password, remember);
     setUser(u);
-    setBalanceCents(u.balanceCents || 0);
     setAuthNotice('');
   };
 
   const handleAuthRegister = async (email: string, password: string, name: string, remember: boolean) => {
     const u = await register(email, password, name, remember);
     setUser(u);
-    setBalanceCents(u.balanceCents || 0);
     setAuthNotice('');
   };
 
@@ -1232,7 +1291,6 @@ const App = () => {
     setUser(null);
     setTasks([]);
     setTrash([]);
-    setBalanceCents(0);
     setAuthNotice('');
     setShowOnboarding(false);
     setOnboardingStep(0);
@@ -1438,11 +1496,11 @@ const App = () => {
     });
   };
 
-  const handleClearAiSubtasks = (parentId: string) => {
+  const handleClearIncompleteSubtasks = (parentId: string) => {
     const parent = findTask(tasks, parentId);
     if (!parent) return;
-    const aiChildren = (parent.children || []).filter((child) => child.createdBy === 'ai');
-    if (aiChildren.length === 0) return;
+    const incompleteChildren = (parent.children || []).filter((child) => (child.status ?? 'open') !== 'done');
+    if (incompleteChildren.length === 0) return;
     splitRequestRef.current.set(parentId, Date.now());
     setPlanningIds((prev) => {
       if (!prev.has(parentId)) return prev;
@@ -1452,7 +1510,7 @@ const App = () => {
     });
     lastUserActionRef.current = Date.now();
     const deletedAt = new Date().toISOString();
-    const trashedCopies = aiChildren.map((child) => {
+    const trashedCopies = incompleteChildren.map((child) => {
       const copy = typeof structuredClone === 'function' ? structuredClone(child) : (JSON.parse(JSON.stringify(child)) as TaskNode);
       return {
         ...copy,
@@ -1463,21 +1521,127 @@ const App = () => {
     setTasks((prev) =>
       updateTask(prev, parentId, (t) => ({
         ...t,
-        children: (t.children || []).filter((child) => child.createdBy !== 'ai')
+        children: (t.children || []).filter((child) => (child.status ?? 'open') === 'done')
       }))
     );
     setTrash((prev) => [...trashedCopies, ...prev]);
+  };
+
+  const openManualAiRequest = (request: ManualAiRequest) => {
+    if (manualAiRequest) {
+      alert('Finish the current manual AI request before starting a new one.');
+      return false;
+    }
+    setManualAiRequest(request);
+    setManualAiOutput('');
+    setManualAiError(null);
+    return true;
+  };
+
+  const cancelManualAiRequest = () => {
+    if (!manualAiRequest) return;
+    if (manualAiRequest.type === 'split') {
+      const { taskId, requestToken } = manualAiRequest;
+      setPlanningIds((prev) => {
+        const next = new Set(prev);
+        next.delete(taskId);
+        return next;
+      });
+      if (splitRequestRef.current.get(taskId) === requestToken) {
+        splitRequestRef.current.delete(taskId);
+      }
+    }
+    if (manualAiRequest.type === 'chat') {
+      setChatting(false);
+    }
+    setManualAiRequest(null);
+    setManualAiOutput('');
+    setManualAiError(null);
+  };
+
+  const applyManualAiOutput = () => {
+    if (!manualAiRequest) return;
+    const raw = manualAiOutput.trim();
+    if (!raw) {
+      setManualAiError('Paste the model output first.');
+      return;
+    }
+    if (manualAiRequest.type === 'split') {
+      const { taskId, taskTitle, requestToken } = manualAiRequest;
+      if (splitRequestRef.current.get(taskId) !== requestToken) {
+        setManualAiError('This split request is no longer active.');
+        return;
+      }
+      let parsed;
+      try {
+        parsed = parseModelJson(raw);
+      } catch (err) {
+        setManualAiError(err instanceof Error ? err.message : 'Failed to parse JSON output.');
+        return;
+      }
+      const items = Array.isArray(parsed) ? parsed : parsed?.items;
+      if (!Array.isArray(items)) {
+        setManualAiError('Expected JSON with an "items" array.');
+        return;
+      }
+      const parent = findTask(tasks, taskId);
+      if (!parent) {
+        setManualAiError('This task no longer exists.');
+        return;
+      }
+      const subtasks = items.map((item) => ({
+        id: randomId(),
+        title: typeof item?.title === 'string' && item.title.trim() ? item.title.trim() : '(untitled task)',
+        description: item?.description || `Auto-planned from "${taskTitle}".`,
+        dueDate: item?.dueDate ?? undefined,
+        attachments: [],
+        children: [],
+        parentId: taskId,
+        status: 'open',
+        createdBy: 'ai',
+        createdAt: new Date().toISOString()
+      }));
+      lastUserActionRef.current = Date.now();
+      setTasks((prev) =>
+        updateTask(prev, taskId, (t) => ({
+          ...t,
+          children: [...(t.children || []), ...subtasks]
+        }))
+      );
+      setPlanningIds((prev) => {
+        const next = new Set(prev);
+        next.delete(taskId);
+        return next;
+      });
+      splitRequestRef.current.delete(taskId);
+      setManualAiRequest(null);
+      setManualAiOutput('');
+      setManualAiError(null);
+      return;
+    }
+    if (manualAiRequest.type === 'chat') {
+      const aiMessage: ChatMessage = {
+        id: randomId(),
+        role: 'ai',
+        content: raw,
+        createdAt: new Date().toISOString()
+      };
+      setMessages((prev) => {
+        const next = [...prev, aiMessage];
+        enqueueSave({ chat: next });
+        return next;
+      });
+      setChatting(false);
+      setManualAiRequest(null);
+      setManualAiOutput('');
+      setManualAiError(null);
+    }
   };
 
   const handleSplit = async (id: string) => {
     const task = findTask(tasks, id);
     if (!task) return;
     if (!user) return;
-    if (!hasMinBalance) {
-      alert('Minimum balance of $0.50 required to use AI features. Please add funds to continue.');
-      return;
-    }
-    const balanceBeforeSplit = balanceCentsRef.current;
     if (isDueTodayOrPast(task.dueDate, todayUtc)) {
       setMessages((prev) => [
         ...prev,
@@ -1497,130 +1661,48 @@ const App = () => {
     });
     const splitToken = Date.now();
     splitRequestRef.current.set(id, splitToken);
-    const splitRequestId = randomId();
-    const controller = new AbortController();
-    splitAbortRef.current.set(id, { controller, requestId: splitRequestId });
-    try {
-      const ancestors = getAncestors(tasks, id);
-      const subtasks = await generateSubtasks({
-        task,
-        ancestors,
-        conversation: messages,
-        globalInstruction,
-        modelId,
-        webSearchEnabled,
-        splitRequestId,
-        abortSignal: controller.signal,
-        userId: user.id,
-        clientLocalDate
-      });
-      if (splitRequestRef.current.get(id) !== splitToken) return;
-      lastUserActionRef.current = Date.now();
-      setTasks((prev) =>
-        updateTask(prev, id, (t) => ({
-          ...t,
-          children: [...(t.children || []), ...subtasks]
-        }))
-      );
-      if (splitRequestRef.current.get(id) === splitToken) {
-        try {
-          const updatedBalance = await fetchBalance(user.id);
-          if (splitRequestRef.current.get(id) !== splitToken) return;
-          setBalanceCents((prev) => (prev === updatedBalance ? prev : updatedBalance));
-          if (updatedBalance < balanceBeforeSplit) {
-            animateBalanceDeduction(balanceBeforeSplit, updatedBalance);
-          } else {
-            setBalanceDisplayCents(updatedBalance);
-            clearBalanceDelta();
-          }
-        } catch (e) {
-          console.error('Failed to refresh balance after split', e);
-        }
-      }
-    } catch (err) {
-      if (splitRequestRef.current.get(id) === splitToken) {
-        if (err && typeof err === 'object' && 'name' in err && err.name === 'AbortError') {
-          // User-initiated abort; no error alert needed.
-          return;
-        }
-        console.error('AI split failed', err);
-        alert(`AI split failed: ${err instanceof Error ? err.message : 'Please try again.'}`);
-      }
-    } finally {
+    const ancestors = getAncestors(tasks, id);
+    const prompt = buildManualSplitPrompt({
+      task,
+      ancestors,
+      conversation: messages,
+      globalInstruction,
+      clientLocalDate
+    });
+    const opened = openManualAiRequest({
+      type: 'split',
+      prompt,
+      taskId: id,
+      taskTitle: task.title || '(untitled task)',
+      requestToken: splitToken
+    });
+    if (!opened) {
       setPlanningIds((prev) => {
         const next = new Set(prev);
         next.delete(id);
         return next;
       });
-      if (splitRequestRef.current.get(id) === splitToken) {
-        splitRequestRef.current.delete(id);
-      }
-      splitAbortRef.current.delete(id);
+      splitRequestRef.current.delete(id);
     }
-  };
-
-  const handleAbortSplit = async (id: string) => {
-    if (!user) return;
-    const entry = splitAbortRef.current.get(id);
-    if (!entry) return;
-    const confirmed = window.confirm('Abort AI split? Funds are still deducted for any work performed.');
-    if (!confirmed) return;
-    if (splitAbortNoticeTimeoutRef.current) {
-      window.clearTimeout(splitAbortNoticeTimeoutRef.current);
-    }
-    entry.controller.abort();
-    splitAbortRef.current.delete(id);
-    splitRequestRef.current.delete(id);
-    setPlanningIds((prev) => {
-      const next = new Set(prev);
-      next.delete(id);
-      return next;
-    });
-    try {
-      await abortAiSplit({ splitRequestId: entry.requestId, userId: user.id });
-    } catch (err) {
-      console.warn('Failed to notify server about split abort', err);
-    }
-    setSplitAbortNotice('Funds are still deducted for any work performed.');
-    splitAbortNoticeTimeoutRef.current = window.setTimeout(() => {
-      setSplitAbortNotice(null);
-    }, 8000);
   };
 
   const handleChat = async (text: string) => {
     if (!user) return;
-    if (!hasMinBalance) {
-      const errorMsg: ChatMessage = {
-        id: randomId(),
-        role: 'ai',
-        content: 'Minimum balance of $0.50 required to use AI features. Please add funds to continue.',
-        createdAt: new Date().toISOString()
-      };
-      setMessages((prev) => [...prev, errorMsg]);
+    if (manualAiRequest) {
+      alert('Finish the current manual AI request before sending another message.');
       return;
     }
     const userMsg: ChatMessage = { id: randomId(), role: 'user', content: text, createdAt: new Date().toISOString() };
     setMessages((prev) => [...prev, userMsg]);
     setChatting(true);
-    try {
-      const aiMessage = await chatWithPlanner(text, tasks, globalInstruction, null, modelId, user.id, clientLocalDate, webSearchEnabled);
-      setMessages((prev) => [...prev, aiMessage]);
-      // Persist chat immediately to reduce chance of losing the last response
-      const baseMessages = latestStateRef.current.messages;
-      const chatLog = baseMessages.some((msg) => msg.id === userMsg.id)
-        ? [...baseMessages, aiMessage]
-        : [...baseMessages, userMsg, aiMessage];
-      enqueueSave({ chat: chatLog });
-    } catch (err) {
-      console.error('Chat failed', err);
-      const errorMsg: ChatMessage = {
-        id: randomId(),
-        role: 'ai',
-        content: `Sorry, I couldn't respond. ${err instanceof Error ? err.message : 'Please try again.'}`,
-        createdAt: new Date().toISOString()
-      };
-      setMessages((prev) => [...prev, errorMsg]);
-    } finally {
+    const prompt = buildManualChatPrompt({
+      prompt: text,
+      tasks,
+      globalInstruction,
+      clientLocalDate
+    });
+    const opened = openManualAiRequest({ type: 'chat', prompt });
+    if (!opened) {
       setChatting(false);
     }
   };
@@ -1640,15 +1722,6 @@ const App = () => {
     } else {
       setShowSettingsModal(true);
     }
-  };
-
-  const updateWebSearchSetting = (enabled: boolean) => {
-    const saveToken = Date.now();
-    const updatedModelId = getValidModelOrDefault(applyWebSearchSetting(modelId, enabled));
-    lastUserActionRef.current = saveToken;
-    setWebSearchEnabled(enabled);
-    setModelId(updatedModelId);
-    enqueueSave({ config: { globalInstruction, webSearchEnabled: enabled, modelId: updatedModelId } }, saveToken);
   };
 
   const renderSettingsContent = (onDone: () => void) => {
@@ -1778,24 +1851,6 @@ const App = () => {
         </div>
 
         <div style={{ marginBottom: 'var(--space-xl)' }}>
-          <p style={{ fontWeight: 600, marginBottom: 'var(--space-sm)' }}>Web search for AI</p>
-          <p className="muted" style={{ marginBottom: 'var(--space-sm)' }}>
-            Let the model use the internet for current details and curriculum references.
-          </p>
-          <p className="muted" style={{ marginBottom: 'var(--space-sm)' }}>
-            Enabling web search may slightly increase costs.
-          </p>
-          <label className="settings-toggle">
-            <input
-              type="checkbox"
-              checked={webSearchEnabled}
-              onChange={(e) => updateWebSearchSetting(e.target.checked)}
-            />
-            <span>Enable web search</span>
-          </label>
-        </div>
-        
-        <div style={{ marginBottom: 'var(--space-xl)' }}>
           <p style={{ fontWeight: 600, marginBottom: 'var(--space-sm)' }}>Onboarding</p>
           <p className="muted" style={{ marginBottom: 'var(--space-sm)' }}>
             Replay the guided walkthrough of YanPlanner features.
@@ -1877,10 +1932,6 @@ const App = () => {
             <div className="settings-about-row">
               <span className="muted">Support</span>
               <a href="mailto:ethanxucoder@gmail.com">ethanxucoder@gmail.com</a>
-            </div>
-            <div className="settings-about-row">
-              <span className="muted">AI model</span>
-              <span>{currentModel?.label || modelId}</span>
             </div>
           </div>
         </div>
@@ -2035,17 +2086,6 @@ const App = () => {
                 <span>Tasks</span>
                 <strong className="task-stats-value">{stats.dueByTomorrow}/{stats.total}</strong>
               </div>
-              <div className="balance-row">
-                <span>Balance</span>
-                <div className="balance-amount">
-                  <strong>{formatCurrency(balanceDisplayCents)}</strong>
-                  {balanceDeltaCents !== null && (
-                    <span key={balanceDeltaKey} className="balance-delta" style={balanceDeltaStyle}>
-                      -{formatCurrency(balanceDeltaCents)}
-                    </span>
-                  )}
-                </div>
-              </div>
             </div>
           </div>
           <div
@@ -2066,9 +2106,6 @@ const App = () => {
                 className="account-dropdown"
                 onClick={(e) => e.stopPropagation()}
               >
-                <button className="secondary" onClick={() => { setShowTopUpModal(true); setShowAccountDropdown(false); }}>
-                  💳 Add funds
-                </button>
                 <button className="secondary" onClick={() => { handleLogout(); setShowAccountDropdown(false); }} title="Log out of this account">
                   🚪 Logout
                 </button>
@@ -2088,26 +2125,6 @@ const App = () => {
           </button>
         </div>
       )}
-      {splitAbortNotice && (
-        <div className="override-banner app-override-banner" role="status">
-          <div className="override-banner-text">
-            <strong>AI split aborted</strong>
-            <span>{splitAbortNotice}</span>
-          </div>
-          <button
-            className="secondary"
-            onClick={() => {
-              if (splitAbortNoticeTimeoutRef.current) {
-                window.clearTimeout(splitAbortNoticeTimeoutRef.current);
-              }
-              setSplitAbortNotice(null);
-            }}
-          >
-            Dismiss
-          </button>
-        </div>
-      )}
-
       {/* Main content area with sidebar */}
       <div className={`app-content ${showChat ? 'with-chat-sidebar' : ''}`}>
         {/* Left sidebar with view selector */}
@@ -2202,7 +2219,6 @@ const App = () => {
             <TaskTree
               tasks={tasks}
               onSplit={handleSplit}
-              onAbortSplit={handleAbortSplit}
               onAddSubtask={handleAddTask}
               onReorder={(newTasks) => {
                 lastUserActionRef.current = Date.now();
@@ -2231,11 +2247,10 @@ const App = () => {
               }}
               highlightedTaskId={highlightedTaskId}
               userId={user?.id}
-              balanceCents={balanceCents}
               todayUtc={todayUtc}
               onboardingSplitTaskId={showOnboarding ? onboardingSplitTaskId : null}
               onboardingShowSplit={onboardingIsSplitStep}
-              onClearAiSubtasks={handleClearAiSubtasks}
+              onClearIncompleteSubtasks={handleClearIncompleteSubtasks}
             />
           )
         ) : activeTab === 'list' ? (
@@ -2245,7 +2260,6 @@ const App = () => {
             <SimpleListView
               tasks={tasks}
               onSplit={handleSplit}
-              onAbortSplit={handleAbortSplit}
               onDelete={(id) => {
                 const ok = window.confirm('Move this task and its subtasks to trash? Attachments stay until permanently deleted.');
                 if (!ok) return;
@@ -2256,7 +2270,6 @@ const App = () => {
               onEditModeChange={setIsEditingTask}
               onShowInTree={handleShowInTree}
               userId={user?.id}
-              balanceCents={balanceCents}
               todayUtc={todayUtc}
             />
           )
@@ -2410,7 +2423,7 @@ const App = () => {
           <div className="modal" onClick={(e) => e.stopPropagation()} data-onboarding="task-modal">
             <p className="task-title">Add a new task</p>
             <p className="muted">Include due date and uploads. The AI will use them to split accurately.</p>
-            <TaskForm userId={user?.id} balanceCents={balanceCents} onSubmit={handleAddTask} onCancel={closeTaskModal} />
+            <TaskForm userId={user?.id} onSubmit={handleAddTask} onCancel={closeTaskModal} />
           </div>
         </div>
       )}
@@ -2442,49 +2455,56 @@ const App = () => {
           </div>
         </div>
       )}
-      {showTopUpModal && (
-        <div className="modal-backdrop" onClick={() => setShowTopUpModal(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <p className="task-title">Add funds (non-refundable)</p>
-            <p className="muted">You’ll be redirected to Stripe checkout. Top-ups are final.</p>
-            <label className="muted">Amount (USD)</label>
-            <input
-              type="number"
-              min={1}
-              step={1}
-              value={topUpAmount}
-              onChange={(e) => setTopUpAmount(e.target.value)}
+      {manualAiRequest && (
+        <div className="modal-backdrop" onClick={cancelManualAiRequest}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 720 }}>
+            <p className="task-title">
+              {manualAiRequest.type === 'split'
+                ? `Manual AI split: ${manualAiRequest.taskTitle}`
+                : 'Manual AI chat response'}
+            </p>
+            <p className="muted">
+              Copy the prompt, run it in your AI tool, then paste the output below so YanPlanner can apply it.
+            </p>
+            <label className="muted">Prompt</label>
+            <textarea
+              value={manualAiRequest.prompt}
+              readOnly
+              style={{ minHeight: 160 }}
             />
             <div className="task-actions" style={{ marginTop: 12 }}>
               <button
-                className="primary"
-                disabled={toppingUp}
-                onClick={async () => {
-                  if (!user) return;
-                  const dollars = parseFloat(topUpAmount);
-                  if (!Number.isFinite(dollars) || dollars <= 0) return;
-                  const cents = Math.round(dollars * 100);
-                  setToppingUp(true);
-                  try {
-                    const session = await createCheckoutSession(user.id, cents);
-                    window.location.href = session.url;
-                  } catch (err) {
-                    console.error(err);
-                    alert('Top-up failed: ' + (err instanceof Error ? err.message : 'Unknown error'));
-                  } finally {
-                    setToppingUp(false);
-                  }
-                }}
+                className="secondary"
+                onClick={() => copyTextToClipboard(manualAiRequest.prompt)}
               >
-                {toppingUp ? 'Redirecting…' : 'Pay with Stripe'}
-              </button>
-              <button className="secondary" onClick={() => setShowTopUpModal(false)}>
-                Cancel
+                Copy prompt
               </button>
             </div>
-            <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>
-              No refunds.
-            </p>
+            <label className="muted" style={{ marginTop: 12 }}>
+              Model output
+            </label>
+            <textarea
+              placeholder={manualAiRequest.type === 'split' ? 'Paste JSON output here...' : 'Paste the AI response here...'}
+              value={manualAiOutput}
+              onChange={(e) => {
+                setManualAiOutput(e.target.value);
+                if (manualAiError) setManualAiError(null);
+              }}
+              style={{ minHeight: 140 }}
+            />
+            {manualAiError && (
+              <p className="muted" style={{ color: '#b42318', marginTop: 8 }}>
+                {manualAiError}
+              </p>
+            )}
+            <div className="task-actions" style={{ marginTop: 12 }}>
+              <button className="secondary" onClick={cancelManualAiRequest}>
+                Cancel
+              </button>
+              <button className="primary" onClick={applyManualAiOutput}>
+                Apply output
+              </button>
+            </div>
           </div>
         </div>
       )}
