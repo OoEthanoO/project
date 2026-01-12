@@ -929,7 +929,6 @@ const App = () => {
         setGlobalInstruction('');
         setModelId(defaultModel);
         setWebSearchEnabled(defaultWebSearchEnabled);
-        setManualAiMode(false);
         setShowOnboarding(false);
         setOnboardingStep(0);
         return;
