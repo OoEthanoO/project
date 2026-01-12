@@ -153,7 +153,7 @@ const TaskTree = ({
   );
 };
 
-const isDueTodayOrPast = (dueDate?: string, todayUtc?: number) => {
+const isDueBeforeToday = (dueDate?: string, todayUtc?: number) => {
   if (!dueDate) return false;
   const trimmed = dueDate.trim();
   if (!trimmed) return false;
@@ -163,9 +163,9 @@ const isDueTodayOrPast = (dueDate?: string, todayUtc?: number) => {
   if (typeof todayUtc !== 'number') {
     const now = new Date();
     const fallbackUtc = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-    return due <= fallbackUtc;
+    return due < fallbackUtc;
   }
-  return due <= todayUtc;
+  return due < todayUtc;
 };
 
 const resolveTodayUtc = (todayUtc?: number) => {
@@ -256,7 +256,7 @@ const TaskNodeView = ({
   const [isMobile, setIsMobile] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement | null>(null);
   const isStartAfterDue = task.startDate && task.dueDate && task.startDate >= task.dueDate;
-  const canSplit = !isDueTodayOrPast(task.dueDate, todayUtc) && !isStartAfterDue;
+  const canSplit = !isDueBeforeToday(task.dueDate, todayUtc) && !isStartAfterDue;
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(task.title);
   const [dueDate, setDueDate] = useState(task.dueDate || '');
@@ -287,7 +287,7 @@ const TaskNodeView = ({
   const hasDueSoonIndicator = hasDueSoonSelf || hasDueSoonSubtask;
   const hasIncompleteSubtasks = (task.children || []).some((child) => isActiveStatus(child.status));
   const splitDisabledReason = !canSplit
-    ? 'Due today or overdue; adjust due date before splitting.'
+    ? 'Overdue; adjust due date before splitting.'
     : undefined;
 
   console.log('TaskNodeView render - task:', task.id, 'editing:', editing);

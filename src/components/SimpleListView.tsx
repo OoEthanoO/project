@@ -135,7 +135,7 @@ const compareTasks = (taskById: Map<string, FlatTask>) => (a: FlatTask, b: FlatT
   return a.order - b.order;
 };
 
-const isDueTodayOrPast = (dueDate?: string, todayUtc?: number) => {
+const isDueBeforeToday = (dueDate?: string, todayUtc?: number) => {
   if (!dueDate) return false;
   const trimmed = dueDate.trim();
   if (!trimmed) return false;
@@ -145,9 +145,9 @@ const isDueTodayOrPast = (dueDate?: string, todayUtc?: number) => {
   if (typeof todayUtc !== 'number') {
     const now = new Date();
     const fallbackUtc = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-    return due <= fallbackUtc;
+    return due < fallbackUtc;
   }
-  return due <= todayUtc;
+  return due < todayUtc;
 };
 
 const resolveTodayUtc = (todayUtc?: number) => {
@@ -282,7 +282,7 @@ const ListItem = ({
   const [isMobile, setIsMobile] = useState(false);
   const [showMobileModal, setShowMobileModal] = useState(false);
   const isStartAfterDue = task.startDate && task.dueDate && task.startDate >= task.dueDate;
-  const canSplit = !isDueTodayOrPast(task.dueDate, todayUtc) && !isStartAfterDue;
+  const canSplit = !isDueBeforeToday(task.dueDate, todayUtc) && !isStartAfterDue;
   const isDone = task.status === 'done';
   const showMenuButton = !isMobile && !editing;
   const isSplitting = planningIds?.has(task.id);
@@ -297,7 +297,7 @@ const ListItem = ({
   const hasDueSoonSubtask = hasOpenSubtaskDueSoon(task, dueSoonUtc);
   const hasDueSoonIndicator = hasDueSoonSelf || hasDueSoonSubtask;
   const splitDisabledReason = !canSplit
-    ? 'Due today or overdue; adjust due date before splitting.'
+    ? 'Overdue; adjust due date before splitting.'
     : undefined;
   const dueDateLabel = task.dueDate
     ? task.startDate ? `${task.startDate} to ${task.dueDate}` : task.dueDate

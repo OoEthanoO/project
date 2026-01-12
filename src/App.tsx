@@ -102,7 +102,7 @@ type FlatListTask = TaskNode & {
   ancestry: string[];
 };
 
-const isDueTodayOrPast = (dueDate?: string, todayUtc?: number) => {
+const isDueBeforeToday = (dueDate?: string, todayUtc?: number) => {
   if (!dueDate) return false;
   const trimmed = dueDate.trim();
   if (!trimmed) return false;
@@ -110,7 +110,7 @@ const isDueTodayOrPast = (dueDate?: string, todayUtc?: number) => {
   const due = !Number.isNaN(y) && !Number.isNaN(m) && !Number.isNaN(d) ? new Date(y, m - 1, d).getTime() : Date.parse(trimmed);
   if (Number.isNaN(due)) return false;
   const resolvedTodayUtc = typeof todayUtc === 'number' ? todayUtc : resolveTodayUtc(null);
-  return due <= resolvedTodayUtc;
+  return due < resolvedTodayUtc;
 };
 const isDueTomorrowOrPast = (dueDate?: string, todayUtc?: number) => {
   if (!dueDate) return false;
@@ -274,6 +274,15 @@ const buildManualSplitPrompt = ({
   const subtreeText = buildTaskListText([task]);
   const todayText = clientLocalDate || formatDateInput(new Date());
   const tomorrowText = resolveTomorrowDate(todayText);
+  const normalizedDueDate = parseDateInput(task.dueDate || '')?.value;
+  const normalizedToday = parseDateInput(todayText)?.value;
+  const allowSameDayDue = Boolean(normalizedDueDate && normalizedToday && normalizedDueDate === normalizedToday);
+  const dueDateFloorLine = allowSameDayDue
+    ? `Today: ${todayText}. Task is due today, so subtasks may use today as a dueDate.`
+    : `Today: ${todayText}. Earliest allowed dueDate is ${tomorrowText}.`;
+  const dueDateRuleLine = allowSameDayDue
+    ? 'Every subtask must include a dueDate (YYYY-MM-DD) on or after today. Use the task due date as the latest bound if provided.'
+    : 'Every subtask must include a dueDate (YYYY-MM-DD) after today. Use the task due date as the latest bound if provided.';
   const rootWorkDays = ancestors.length ? ancestors[0]?.workDays : task.workDays;
   const taskWorkDays = task.workDays;
   const effectiveWorkDays = taskWorkDays?.length ? taskWorkDays : rootWorkDays;
@@ -282,8 +291,8 @@ const buildManualSplitPrompt = ({
   const lines = [
     'You are a planning assistant. Split the CURRENT task into concrete, milestone-based subtasks. Do NOT create a subtask for every day.',
     'Use web search to verify current details, official syllabi, and topics when helpful.',
-    `Today: ${todayText}. Earliest allowed dueDate is ${tomorrowText}.`,
-    'Every subtask must include a dueDate (YYYY-MM-DD) after today. Use the task due date as the latest bound if provided.',
+    dueDateFloorLine,
+    dueDateRuleLine,
     'Interpret due dates as deadlines at the start of that day (00:00).',
     'Respect existing subtasks in the current task subtree. Do NOT recreate completed work; avoid duplicating any in-progress/open subtasks. Plan only the remaining work.',
     hasWorkDays ? 'Work days indicate when the user can work. Because dueDate is a deadline at 00:00, due dates should be the day AFTER a work day.' : '',
@@ -1641,13 +1650,13 @@ const App = () => {
     const task = findTask(tasks, id);
     if (!task) return;
     if (!user) return;
-    if (isDueTodayOrPast(task.dueDate, todayUtc)) {
+    if (isDueBeforeToday(task.dueDate, todayUtc)) {
       setMessages((prev) => [
         ...prev,
         {
           id: randomId(),
           role: 'ai',
-          content: `Skipping split for "${task.title}" because it is due today or overdue. Update the due date to plan forward.`,
+          content: `Skipping split for "${task.title}" because it is overdue. Update the due date to plan forward.`,
           createdAt: new Date().toISOString()
         }
       ]);

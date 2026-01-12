@@ -211,6 +211,8 @@ export const generateSubtasks = async ({ task, ancestors = [], conversation = []
   const hasValidStartDate = parsedStartDate && !Number.isNaN(parsedStartDate.getTime());
   const effectiveStartDate = hasValidStartDate && parsedStartDate > todayDate ? parsedStartDate : todayDate;
   const startDateText = formatDate(effectiveStartDate);
+  const normalizedTaskDue = (task.dueDate || '').trim();
+  const allowSameDayDue = Boolean(normalizedTaskDue && normalizedTaskDue === startDateText);
   const rootWorkDays = normalizeWorkDays(ancestors.length ? ancestors[0]?.workDays : task.workDays);
   const taskWorkDays = normalizeWorkDays(task.workDays);
   const effectiveWorkDays = taskWorkDays.length ? taskWorkDays : rootWorkDays;
@@ -316,15 +318,30 @@ export const generateSubtasks = async ({ task, ancestors = [], conversation = []
   console.log('[generateSubtasks] Final imageParts:', imageParts.length);
   console.log('[generateSubtasks] Final pdfParts:', pdfParts.length);
 
+  const dueDateFloorLine = allowSameDayDue
+    ? `Task is due today (${startDateText}), so subtasks may use today as a dueDate but not earlier.`
+    : `Never set a subtask dueDate to Today (${startDateText}); every subtask dueDate must be strictly after today.`;
+  const dueDateEarliestLine = allowSameDayDue
+    ? `Earliest allowed dueDate is Today (${startDateText}).`
+    : `Earliest allowed dueDate is Tomorrow (Today + 1 day). If any draft dueDate is Today or earlier, move it forward to Tomorrow or later.`;
+  const parentDueTodayLine = allowSameDayDue
+    ? ''
+    : 'If a parent due date is today or earlier, still schedule subtasks strictly after today; do not use today even if it exceeds the parent due date.';
+  const parentDueConstraintLine = allowSameDayDue
+    ? 'If the parent has a due date, keep every subtask on or before it. Assign a concrete dueDate for every subtask; today is allowed when the parent is due today.'
+    : 'If the parent has a due date, keep every subtask on or before it. Still assign a concrete dueDate after today for every subtask.';
+  const dueDateRequirementLine = allowSameDayDue
+    ? 'Be concise and actionable. Every subtask MUST include a dueDate (YYYY-MM-DD). Never return null for dueDate. Due dates must be TODAY or later.'
+    : 'Be concise and actionable. Every subtask MUST include a dueDate (YYYY-MM-DD). Never return null for dueDate. Due dates must be AFTER today.';
   const promptText = [
     'Split the given task into concrete, milestone-based subtasks sized to the work. Do NOT assume a daily split.',
     `Today: ${startDateText}. Treat this as the earliest work date (the later of now or any task start).`,
-    `Never set a subtask dueDate to Today (${startDateText}); every subtask dueDate must be strictly after today.`,
-    `Earliest allowed dueDate is Tomorrow (Today + 1 day). If any draft dueDate is Today or earlier, move it forward to Tomorrow or later.`,
-    'If a parent due date is today or earlier, still schedule subtasks strictly after today; do not use today even if it exceeds the parent due date.',
+    dueDateFloorLine,
+    dueDateEarliestLine,
+    parentDueTodayLine,
     'Use the provided YYYY-MM-DD dates as-is; do not normalize or transform date strings.',
-    'If the parent has a due date, keep every subtask on or before it. Still assign a concrete dueDate after today for every subtask.',
-    'Be concise and actionable. Every subtask MUST include a dueDate (YYYY-MM-DD). Never return null for dueDate. Due dates must be AFTER today.',
+    parentDueConstraintLine,
+    dueDateRequirementLine,
     'Interpret all due dates as deadlines at the START of that day (00:00), so finish work by the prior day if needed.',
     rootWorkDays.length || taskWorkDays.length
       ? 'Work days indicate when the user can work. Because dueDate is a deadline at 00:00, every subtask due date MUST be the day AFTER a work day.'
