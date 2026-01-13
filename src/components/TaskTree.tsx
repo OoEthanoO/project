@@ -471,7 +471,11 @@ const TaskNodeView = ({
       onClearIncompleteSubtasks(task.id);
       return;
     }
-    onUpdate(task.id, { children: (task.children || []).filter((c) => !isActiveStatus(c.status)) });
+    const remainingChildren = (task.children || []).filter((c) => !isActiveStatus(c.status));
+    onUpdate(task.id, {
+      status: remainingChildren.length === 0 ? 'open' : task.status,
+      children: remainingChildren
+    });
   };
 
   const openCopySubmenu = () => {

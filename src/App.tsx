@@ -1526,12 +1526,17 @@ const App = () => {
         trashedFromParentId: parentId
       };
     });
-    setTasks((prev) =>
-      updateTask(prev, parentId, (t) => ({
-        ...t,
-        children: (t.children || []).filter((child) => (child.status ?? 'open') === 'done')
-      }))
-    );
+    setTasks((prev) => {
+      const next = updateTask(prev, parentId, (t) => {
+        const remainingChildren = (t.children || []).filter((child) => (child.status ?? 'open') === 'done');
+        return {
+          ...t,
+          status: remainingChildren.length === 0 ? 'open' : t.status,
+          children: remainingChildren
+        };
+      });
+      return updateAncestorStatuses(next, parentId);
+    });
     setTrash((prev) => [...trashedCopies, ...prev]);
   };
 
