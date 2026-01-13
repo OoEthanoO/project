@@ -290,6 +290,7 @@ const buildManualSplitPrompt = ({
   const recentChat = formatRecentChat(conversation);
   const lines = [
     'You are a planning assistant. Split the CURRENT task into concrete, milestone-based subtasks. Do NOT create a subtask for every day.',
+    'Before splitting, gather as much context as possible from the task hierarchy, descriptions, existing subtasks, attachments, recent chat, and web search if available.',
     'Use web search to verify current details, official syllabi, and topics when helpful.',
     dueDateFloorLine,
     dueDateRuleLine,
