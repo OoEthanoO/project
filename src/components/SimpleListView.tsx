@@ -304,7 +304,7 @@ const ListItem = ({
     : '';
   const contextLine = [dueDateLabel, `Root: ${task.rootTitle}`, `Depth: ${task.depth}`]
     .filter(Boolean)
-    .join(' · ');
+    .join(' - ');
 
   // Keep local edit buffers in sync when props change and we're not editing
   useEffect(() => {
@@ -493,7 +493,7 @@ const ListItem = ({
                 }}
                 title="Click to cycle: open → in-progress → done → open. Shift+click to reverse."
               >
-                {task.status === 'done' ? '✓' : task.status === 'in-progress' ? '◐' : '○'}
+                {task.status === 'done' ? '✅' : task.status === 'in-progress' ? '⏳' : '⭕'}
               </button>
               <div className="form-row">
                 <div>
@@ -563,7 +563,7 @@ const ListItem = ({
                   }}
                   title="Click to cycle: open → in-progress → done → open. Shift+click to reverse."
                 >
-                  {task.status === 'done' ? '✓' : task.status === 'in-progress' ? '◐' : '○'}
+                  {task.status === 'done' ? '✅' : task.status === 'in-progress' ? '⏳' : '⭕'}
                 </button>
                 <p className={`task-title ${isDone ? 'task-done' : ''}`} style={{ margin: 0 }}>{task.title}</p>
                 {hasDueSoonIndicator && (
@@ -580,9 +580,9 @@ const ListItem = ({
                   </span>
                 )}
                 {isSplitting && (
-                  <span className="badge badge-splitting" title="AI is splitting this task">
+                  <span className="badge badge-splitting" title="AI is planning the next subtask">
                     <span className="badge-splitting-spinner" aria-hidden="true" />
-                    Splitting…
+                    Planning...
                   </span>
                 )}
               </div>
@@ -633,7 +633,7 @@ const ListItem = ({
           <label className="muted">Work days (optional)</label>
           <WorkDaysPicker value={workDays} onChange={(next) => setWorkDays(next ?? [])} />
           <p className="muted" style={{ fontSize: 12, margin: '4px 0' }}>
-            AI subtasks will be due the day after each work day (ex: Tue work day to Wed due date).
+            The AI next subtask is always due tomorrow; work days are context for what is realistic today.
           </p>
         </div>
       ) : null}
@@ -716,7 +716,7 @@ const ListItem = ({
                 disabled={!canSplit || isDone || planningIds?.has(task.id)}
                 title={splitDisabledReason}
               >
-                {planningIds?.has(task.id) ? 'Planning…' : 'AI split'}
+                {planningIds?.has(task.id) ? 'Planning...' : 'Next Subtask'}
               </button>
               {isSplitting && onAbortSplit && (
                 <button
@@ -726,7 +726,7 @@ const ListItem = ({
                     onAbortSplit(task.id);
                   }}
                 >
-                  Abort split
+                  Abort planning
                 </button>
               )}
               <button
@@ -827,7 +827,7 @@ const ListItem = ({
               disabled={!canSplit || isDone || planningIds?.has(task.id)}
               title={splitDisabledReason}
             >
-              {planningIds?.has(task.id) ? 'Planning…' : '🤖 AI split'}
+              {planningIds?.has(task.id) ? 'Planning...' : '🤖 Next Subtask'}
             </button>
             {isSplitting && onAbortSplit && (
               <button
@@ -837,7 +837,7 @@ const ListItem = ({
                   onAbortSplit(task.id);
                 }}
               >
-                ⛔ Abort split
+                ⛔ Abort planning
               </button>
             )}
             <div
@@ -902,7 +902,7 @@ const ListItem = ({
               }}
               disabled={!onShowInTree}
             >
-              🌲 Show in tree
+              🌳 Show in tree
             </button>
             <button
               className="context-menu-item"

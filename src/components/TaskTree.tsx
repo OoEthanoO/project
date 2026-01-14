@@ -629,7 +629,7 @@ const TaskNodeView = ({
                 }}
                 title="Click to cycle: open → in-progress → done → open. Shift+click to reverse."
               >
-                {task.status === 'done' ? '✓' : task.status === 'in-progress' ? '◐' : '○'}
+                {task.status === 'done' ? '✅' : task.status === 'in-progress' ? '⏳' : '⭕'}
               </button>
               <div className="form-row">
                 <div>
@@ -685,7 +685,7 @@ const TaskNodeView = ({
                   }}
                   title="Click to cycle: open → in-progress → done → open. Shift+click to reverse."
                 >
-                  {task.status === 'done' ? '✓' : task.status === 'in-progress' ? '◐' : '○'}
+                  {task.status === 'done' ? '✅' : task.status === 'in-progress' ? '⏳' : '⭕'}
                 </button>
                 <p className={`task-title ${isDone ? 'task-done' : ''}`} style={{ margin: 0 }}>{task.title}</p>
                 {hasDueSoonIndicator && (
@@ -702,9 +702,9 @@ const TaskNodeView = ({
                   </span>
                 )}
                 {isSplitting && (
-                  <span className="badge badge-splitting" title="AI is splitting this task">
+                  <span className="badge badge-splitting" title="AI is planning the next subtask">
                     <span className="badge-splitting-spinner" aria-hidden="true" />
-                    Splitting…
+                    Planning...
                   </span>
                 )}
               </div>
@@ -762,7 +762,7 @@ const TaskNodeView = ({
                   onToggleCollapsed?.(task.id);
                 }}
               >
-                {isCollapsed ? '›' : '∨'}
+                {isCollapsed ? '▶' : '▼'}
               </button>
             ) : null}
           </div>
@@ -783,7 +783,7 @@ const TaskNodeView = ({
           <label className="muted">Work days (optional)</label>
           <WorkDaysPicker value={workDays} onChange={(next) => setWorkDays(next ?? [])} />
           <p className="muted" style={{ fontSize: 12, margin: '4px 0' }}>
-            AI subtasks will be due the day after each work day (ex: Tue work day to Wed due date).
+            The AI next subtask is always due tomorrow; work days are context for what is realistic today.
           </p>
         </div>
       ) : null}
@@ -847,11 +847,11 @@ const TaskNodeView = ({
               disabled={!canSplit || isDone || planningIds?.has(task.id)}
               title={splitDisabledReason}
             >
-              {planningIds?.has(task.id) ? 'Planning…' : 'AI split'}
+              {planningIds?.has(task.id) ? 'Planning...' : 'Next Subtask'}
             </button>
             {isSplitting && onAbortSplit && (
               <button className="secondary" onClick={() => onAbortSplit(task.id)}>
-                Abort split
+                Abort planning
               </button>
             )}
             <button className="secondary" onClick={() => setShowSubForm((v) => !v)}>
@@ -950,7 +950,7 @@ const TaskNodeView = ({
                     onUpdate(task.id, { status: nextStatus });
                   }}
                 >
-                  {task.status === 'done' ? '✓ ' : task.status === 'in-progress' ? '⟳ ' : '○ '}
+                  {task.status === 'done' ? '✅' : task.status === 'in-progress' ? '⏳' : '⭕'}
                   {task.status || 'open'}
                 </button>
                 <span className={`badge ${task.createdBy === 'ai' ? 'badge-ai' : 'badge-user'}`}>
@@ -971,7 +971,7 @@ const TaskNodeView = ({
                 title={splitDisabledReason}
                 data-onboarding={isOnboardingSplitTarget && onboardingShowSplit ? 'split-task' : undefined}
               >
-                {planningIds?.has(task.id) ? 'Planning…' : 'AI split'}
+                {planningIds?.has(task.id) ? 'Planning...' : 'Next Subtask'}
               </button>
               {isSplitting && onAbortSplit && (
                 <button
@@ -981,7 +981,7 @@ const TaskNodeView = ({
                     onAbortSplit(task.id);
                   }}
                 >
-                  Abort split
+                  Abort planning
                 </button>
               )}
               <button
@@ -1113,7 +1113,7 @@ const TaskNodeView = ({
             title={splitDisabledReason}
             data-onboarding={isOnboardingSplitTarget && onboardingShowSplit ? 'split-task' : undefined}
           >
-            {planningIds?.has(task.id) ? 'Planning…' : '🤖 AI split'}
+            {planningIds?.has(task.id) ? 'Planning...' : '🤖 Next Subtask'}
           </button>
           {isSplitting && onAbortSplit && (
             <button
@@ -1123,7 +1123,7 @@ const TaskNodeView = ({
                 onAbortSplit(task.id);
               }}
             >
-              ⛔ Abort split
+              ⛔ Abort planning
             </button>
           )}
           <div

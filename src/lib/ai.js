@@ -28,6 +28,10 @@ export const generateSubtasks = async ({ task, ancestors, conversation, globalIn
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
     const now = new Date();
     const resolvedClientLocalDate = clientLocalDate || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const [year, month, day] = resolvedClientLocalDate.split('-').map((value) => parseInt(value, 10));
+    const baseDate = new Date(year, (month || 1) - 1, day || 1);
+    const tomorrow = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate() + 1);
+    const tomorrowText = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
     const res = await apiCall(apiSplit, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -40,19 +44,21 @@ export const generateSubtasks = async ({ task, ancestors, conversation, globalIn
     }
     const data = await res.json();
     const items = data.items || [];
-    return items.map((item) => ({
-        id: randomId(),
-        title: item.title,
-        description: item.description || `Auto-planned from "${task.title}".`,
-        // Keep model-provided dueDate; do not default to parent due to avoid collapsing schedule
-        dueDate: item.dueDate ?? undefined,
-        attachments: [],
-        children: [],
-        parentId: task.id,
-        status: 'open',
-        createdBy: 'ai',
-        createdAt: new Date().toISOString()
-    }));
+    const nextItem = Array.isArray(items) ? items[0] : null;
+    return nextItem
+        ? [{
+                id: randomId(),
+                title: nextItem.title,
+                description: nextItem.description || `Auto-planned from "${task.title}".`,
+                dueDate: tomorrowText,
+                attachments: [],
+                children: [],
+                parentId: task.id,
+                status: 'open',
+                createdBy: 'ai',
+                createdAt: new Date().toISOString()
+            }]
+        : [];
 };
 
 /**

@@ -1,0 +1,15 @@
+services:
+  db:
+    image: postgres:16
+    container_name: yanplanner_db
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: yanplanner_dev
+      POSTGRES_USER: yanplanner
+      POSTGRES_PASSWORD: password
+    volumes:
+      - yanplanner_db_data:/var/lib/postgresql/data
+
+volumes:
+  yanplanner_db_data:

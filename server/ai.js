@@ -2,14 +2,14 @@ import fetch from 'node-fetch';
 import { applyWebSearchSetting, getPricingForUsage, hasOnlineSuffix, supportsFiles } from '../shared/model-config.js';
 
 const formatDate = (date) => date.toISOString().split('T')[0];
+const addDays = (date, days) => {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+};
 const WORK_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const WORK_DAY_INDEX = new Map(WORK_DAYS.map((day, index) => [day, index]));
 const normalizeWorkDays = (days) => (Array.isArray(days) ? days.filter((day) => WORK_DAY_INDEX.has(day)) : []);
-const nextDay = (day) => {
-  const idx = WORK_DAY_INDEX.get(day);
-  if (idx === undefined) return null;
-  return WORK_DAYS[(idx + 1) % WORK_DAYS.length];
-};
 const formatWorkDays = (days) => (days && days.length ? days.join(', ') : 'none');
 const WEB_SEARCH_GUIDANCE =
   'Web search is enabled. Use online sources to verify facts and current curricula when planning; if a task references a grade, course, or exam, look up the official syllabus or textbook topics and plan from that.';
@@ -203,22 +203,12 @@ export const generateSubtasks = async ({ task, ancestors = [], conversation = []
     typeof webSearchEnabled === 'boolean' ? webSearchEnabled : hasOnlineSuffix(modelId || '');
   const resolvedModelId = applyWebSearchSetting(modelId, resolvedWebSearchEnabled);
   const supportsFilesFlag = supportsFiles(resolvedModelId);
-  // Use the later of today's date and the effective start date (task start or root start).
   const todayDate = clientLocalDate ? new Date(clientLocalDate) : new Date();
-  const rootStartDate = ancestors.length ? ancestors[0]?.startDate : null;
-  const rawStartDate = task.startDate || rootStartDate;
-  const parsedStartDate = rawStartDate ? new Date(rawStartDate) : null;
-  const hasValidStartDate = parsedStartDate && !Number.isNaN(parsedStartDate.getTime());
-  const effectiveStartDate = hasValidStartDate && parsedStartDate > todayDate ? parsedStartDate : todayDate;
-  const startDateText = formatDate(effectiveStartDate);
-  const normalizedTaskDue = (task.dueDate || '').trim();
-  const allowSameDayDue = Boolean(normalizedTaskDue && normalizedTaskDue === startDateText);
+  const todayText = formatDate(todayDate);
+  const tomorrowText = formatDate(addDays(todayDate, 1));
   const rootWorkDays = normalizeWorkDays(ancestors.length ? ancestors[0]?.workDays : task.workDays);
   const taskWorkDays = normalizeWorkDays(task.workDays);
   const effectiveWorkDays = taskWorkDays.length ? taskWorkDays : rootWorkDays;
-  const allowedDueDays = Array.from(
-    new Set(effectiveWorkDays.map((day) => nextDay(day)).filter(Boolean))
-  );
   const recentChat = conversation
     .slice(-4)
     .map((c) => `${c.role === 'user' ? 'User' : 'AI'}: ${c.content}`)
@@ -240,18 +230,21 @@ export const generateSubtasks = async ({ task, ancestors = [], conversation = []
       return `${label}: ${item.title || '(untitled)'}\nDescription: ${description}\nAttachments: ${attachmentsText}`;
     })
     .join('\n\n');
-  const existingSubtaskLines = (task.children || [])
-    .map((child) => {
+  const formatSubtaskLines = (nodes = [], depth = 0) =>
+    nodes.flatMap((child) => {
       const title = child.title || '(untitled)';
       const status = child.status || 'open';
       const due = child.dueDate ?? 'none';
       const description = (child.description || '').replace(/\s+/g, ' ').trim();
       const createdBy = child.createdBy || 'user';
-      const parts = [`- ${title}`, `status: ${status}`, `due: ${due}`, `by: ${createdBy}`];
+      const indent = '  '.repeat(depth);
+      const parts = [`${indent}- ${title}`, `status: ${status}`, `due: ${due}`, `by: ${createdBy}`];
       if (description) parts.push(`notes: ${description.slice(0, 120)}`);
-      return parts.join(' | ');
-    })
-    .join('\n');
+      const line = parts.join(' | ');
+      const children = formatSubtaskLines(child.children || [], depth + 1);
+      return [line, ...children];
+    });
+  const existingSubtaskLines = formatSubtaskLines(task.children || []).join('\n');
   const attachmentContext = lineageAttachments
     .filter((a) => a.content && a.extractionStatus === 'ok')
     .map((a) => `${a.parentTitle} - ${a.name || 'file'}:\n${a.content || ''}`)
@@ -318,69 +311,45 @@ export const generateSubtasks = async ({ task, ancestors = [], conversation = []
   console.log('[generateSubtasks] Final imageParts:', imageParts.length);
   console.log('[generateSubtasks] Final pdfParts:', pdfParts.length);
 
-  const dueDateFloorLine = allowSameDayDue
-    ? `Task is due today (${startDateText}), so subtasks may use today as a dueDate but not earlier.`
-    : `Never set a subtask dueDate to Today (${startDateText}); every subtask dueDate must be strictly after today.`;
-  const dueDateEarliestLine = allowSameDayDue
-    ? `Earliest allowed dueDate is Today (${startDateText}).`
-    : `Earliest allowed dueDate is Tomorrow (Today + 1 day). If any draft dueDate is Today or earlier, move it forward to Tomorrow or later.`;
-  const parentDueTodayLine = allowSameDayDue
-    ? ''
-    : 'If a parent due date is today or earlier, still schedule subtasks strictly after today; do not use today even if it exceeds the parent due date.';
-  const parentDueConstraintLine = allowSameDayDue
-    ? 'If the parent has a due date, keep every subtask on or before it. Assign a concrete dueDate for every subtask; today is allowed when the parent is due today.'
-    : 'If the parent has a due date, keep every subtask on or before it. Still assign a concrete dueDate after today for every subtask.';
-  const dueDateRequirementLine = allowSameDayDue
-    ? 'Be concise and actionable. Every subtask MUST include a dueDate (YYYY-MM-DD). Never return null for dueDate. Due dates must be TODAY or later.'
-    : 'Be concise and actionable. Every subtask MUST include a dueDate (YYYY-MM-DD). Never return null for dueDate. Due dates must be AFTER today.';
+  const dueDateRequirementLine = `The next subtask MUST have dueDate "${tomorrowText}" (YYYY-MM-DD). Do not use any other date.`;
   const promptText = [
-    'Split the given task into concrete, milestone-based subtasks sized to the work. Do NOT assume a daily split.',
-    'Before splitting, gather as much context as possible from what is provided (task hierarchy, descriptions, existing subtasks, attachments if available, recent chat). Use web search when enabled to fill gaps or verify details.',
-    `Today: ${startDateText}. Treat this as the earliest work date (the later of now or any task start).`,
-    dueDateFloorLine,
-    dueDateEarliestLine,
-    parentDueTodayLine,
-    'Use the provided YYYY-MM-DD dates as-is; do not normalize or transform date strings.',
-    parentDueConstraintLine,
+    'Generate exactly ONE next subtask that represents the best thing to do today. Do NOT split into multiple subtasks.',
+    'Before planning, gather as much context as possible from what is provided (task hierarchy, descriptions, existing subtasks, attachments if available, recent chat). Use web search when enabled to fill gaps or verify details.',
+    `Today: ${todayText}. The next subtask should represent what to work on today.`,
+    `Tomorrow: ${tomorrowText}.`,
     dueDateRequirementLine,
-    'Interpret all due dates as deadlines at the START of that day (00:00), so finish work by the prior day if needed.',
+    'Interpret due dates as deadlines at the START of that day (00:00), so finish work by the prior day if needed.',
     rootWorkDays.length || taskWorkDays.length
-      ? 'Work days indicate when the user can work. Because dueDate is a deadline at 00:00, every subtask due date MUST be the day AFTER a work day.'
+      ? 'Work days indicate when the user can work. Use them as context for what is realistic today, but keep the dueDate fixed to tomorrow.'
       : '',
     rootWorkDays.length || taskWorkDays.length ? `Root work days: ${formatWorkDays(rootWorkDays)}` : '',
     rootWorkDays.length || taskWorkDays.length ? `Current task work days: ${formatWorkDays(taskWorkDays)}` : '',
     rootWorkDays.length || taskWorkDays.length
       ? `Effective work days (use current if set, otherwise root): ${formatWorkDays(effectiveWorkDays)}`
       : '',
-    rootWorkDays.length || taskWorkDays.length
-      ? `Valid due weekdays (day AFTER a work day): ${formatWorkDays(allowedDueDays)}`
-      : '',
-    'Distribute work sensibly across the timeline; avoid putting everything at the end, but DO NOT create a subtask for every day.',
-    'If work is in units (pages/chapters/problems), group units into a manageable number of subtasks rather than daily slices.',
-    'Prefer fewer, higher-impact steps; the user can further split subtasks later if they want daily action items.',
-    'IMPORTANT: Ensure completeness and symmetry. If you create a subtask for "first half" or "part 1" of something, you MUST also create corresponding subtasks for "second half" or remaining parts. Never leave partial work incomplete.',
+    'Pick the highest-impact, most appropriate step to do today. If work is in units (pages/chapters/problems), propose a realistic chunk for today.',
     'Respect existing subtasks under the current task. Do NOT recreate work already completed (status done) or duplicate in-progress/open subtasks; plan only what remains.',
     supportsFilesFlag
-      ? 'Treat attachments as ground truth for progress. If files show partially or fully completed work (e.g., first half of a table already filled), do NOT plan that work again—start from what remains even if the description omits it. If the deliverable already looks complete, focus on polish/review/submit instead of redoing it.'
+      ? 'Treat attachments as ground truth for progress. If files show partially or fully completed work (e.g., first half of a table already filled), do NOT plan that work again - start from what remains even if the description omits it. If the deliverable already looks complete, focus on polish/review/submit instead of redoing it.'
       : 'No file access: rely on the task text for progress; do not assume extra context from attachments.',
     supportsFilesFlag
       ? 'Inspect images/PDFs for completed tables, pasted passages, or filled sections. Assume attachments reflect the latest state even if the description lags.'
       : '',
-    'Do NOT emit or invent a startDate for subtasks; only use dueDate when needed.',
+    'Do NOT emit or invent a startDate for subtasks; only use dueDate.',
     supportsFilesFlag
-      ? 'Use deep reasoning: anticipate risks, add QA/validation steps, and suggest buffers.'
+      ? 'Use deep reasoning: anticipate risks, add QA/validation steps, and propose a doable subtask for today.'
       : 'Text-only mode: ignore attachments; rely on titles/descriptions.',
-    'Respond ONLY as JSON with shape: {"items":[{"title":"...", "description":"...", "dueDate":"YYYY-MM-DD" | null}]}',
+    'Respond ONLY as JSON with shape: {"items":[{"title":"...", "description":"...", "dueDate":"YYYY-MM-DD"}]}',
     globalInstruction ? `Global instruction: ${globalInstruction}` : '',
     '',
     lineageTasks.length > 1 ? `Task hierarchy (root → parent → current): ${hierarchyString}` : '',
     lineageDetails ? `Lineage context:\n${lineageDetails}` : '',
-    `Today: ${startDateText}`,
+    `Today: ${todayText}`,
     `Task title: ${task.title}`,
     `Task due: ${task.dueDate ?? 'not provided'}`,
     `Task work days: ${formatWorkDays(taskWorkDays)}`,
     `Task description: ${task.description || 'none'}`,
-    existingSubtaskLines ? `Existing direct subtasks (respect status/progress):\n${existingSubtaskLines}` : 'Existing direct subtasks: none',
+    existingSubtaskLines ? `Existing subtasks (all levels, respect status/progress):\n${existingSubtaskLines}` : 'Existing subtasks: none',
     `Attachments: ${lineageAttachments.map((a) => `${a.name || a.type || 'file'} (in ${a.parentTitle})`).join(', ') || 'none'}`,
     attachmentMetaText ? `Attachment details: ${attachmentMetaText}` : '',
     attachmentContext ? `Attachment excerpts:\n${attachmentContext}` : '',
@@ -452,11 +421,16 @@ export const generateSubtasks = async ({ task, ancestors = [], conversation = []
   const items = parsed.items ?? [];
 
   try {
-    const mapped = items.map((item) => ({
-      title: item.title,
-      description: item.description || `Auto-planned from "${task.title}".`,
-      dueDate: item.dueDate ?? null
-    }));
+    const nextItem = Array.isArray(items) ? items[0] : null;
+    const mapped = nextItem
+      ? [
+          {
+            title: nextItem.title,
+            description: nextItem.description || `Auto-planned from "${task.title}".`,
+            dueDate: tomorrowText
+          }
+        ]
+      : [];
     return { items: mapped, usage, modelUsed, totalCostUsd };
   } catch (err) {
     console.error('[generateSubtasks] Failed to map model items', {

@@ -72,7 +72,7 @@ const AuthForm = ({ onLogin, onRegister, onResendVerification, notice, onClearNo
         <div className="auth-brand">YanPlanner</div>
         <p className="auth-tagline">Turn assignments and exams into a day-by-day plan.</p>
         <p className="auth-intro">
-          Capture tasks, attach materials, and let the planner split work into clear steps you can follow.
+          Capture tasks, attach materials, and let the planner surface the best next step for today.
         </p>
         <div className="auth-highlights">
           <div className="auth-highlight">
@@ -81,7 +81,7 @@ const AuthForm = ({ onLogin, onRegister, onResendVerification, notice, onClearNo
           </div>
           <div className="auth-highlight">
             <p className="auth-highlight-title">Plan faster</p>
-            <p className="auth-highlight-text">Break big assignments into daily steps.</p>
+            <p className="auth-highlight-text">Generate one focused subtask at a time.</p>
           </div>
           <div className="auth-highlight">
             <p className="auth-highlight-title">Keep momentum</p>

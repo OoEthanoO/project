@@ -28,7 +28,7 @@ const initialCoachMessage = () => ({
   id: randomId(),
   role: 'ai' as const,
   content:
-    'I can turn assignments and tests into daily, actionable steps. Add tasks with due dates, attach materials (PDFs/images), and hit "AI split" to generate subtasks. The chat stays in sync with your plan.',
+    'I can turn assignments and tests into daily, actionable steps. Add tasks with due dates, attach materials (PDFs/images), and hit "Next Subtask" to generate what you should do today. The chat stays in sync with your plan.',
   createdAt: new Date().toISOString()
 });
 
@@ -274,29 +274,20 @@ const buildManualSplitPrompt = ({
   const subtreeText = buildTaskListText([task]);
   const todayText = clientLocalDate || formatDateInput(new Date());
   const tomorrowText = resolveTomorrowDate(todayText);
-  const normalizedDueDate = parseDateInput(task.dueDate || '')?.value;
-  const normalizedToday = parseDateInput(todayText)?.value;
-  const allowSameDayDue = Boolean(normalizedDueDate && normalizedToday && normalizedDueDate === normalizedToday);
-  const dueDateFloorLine = allowSameDayDue
-    ? `Today: ${todayText}. Task is due today, so subtasks may use today as a dueDate.`
-    : `Today: ${todayText}. Earliest allowed dueDate is ${tomorrowText}.`;
-  const dueDateRuleLine = allowSameDayDue
-    ? 'Every subtask must include a dueDate (YYYY-MM-DD) on or after today. Use the task due date as the latest bound if provided.'
-    : 'Every subtask must include a dueDate (YYYY-MM-DD) after today. Use the task due date as the latest bound if provided.';
   const rootWorkDays = ancestors.length ? ancestors[0]?.workDays : task.workDays;
   const taskWorkDays = task.workDays;
   const effectiveWorkDays = taskWorkDays?.length ? taskWorkDays : rootWorkDays;
   const hasWorkDays = Boolean(rootWorkDays?.length || taskWorkDays?.length);
   const recentChat = formatRecentChat(conversation);
   const lines = [
-    'You are a planning assistant. Split the CURRENT task into concrete, milestone-based subtasks. Do NOT create a subtask for every day.',
-    'Before splitting, gather as much context as possible from the task hierarchy, descriptions, existing subtasks, attachments, recent chat, and web search if available.',
+    'You are a planning assistant. Generate EXACTLY ONE next subtask for the CURRENT task. Do NOT split into multiple subtasks.',
+    'Before planning, gather as much context as possible from the task hierarchy, descriptions, existing subtasks, attachments, recent chat, and web search if available.',
     'Use web search to verify current details, official syllabi, and topics when helpful.',
-    dueDateFloorLine,
-    dueDateRuleLine,
+    `Today: ${todayText}. The next subtask should represent what to work on today.`,
+    `Tomorrow: ${tomorrowText}. The dueDate MUST be ${tomorrowText}.`,
     'Interpret due dates as deadlines at the start of that day (00:00).',
     'Respect existing subtasks in the current task subtree. Do NOT recreate completed work; avoid duplicating any in-progress/open subtasks. Plan only the remaining work.',
-    hasWorkDays ? 'Work days indicate when the user can work. Because dueDate is a deadline at 00:00, due dates should be the day AFTER a work day.' : '',
+    hasWorkDays ? 'Work days indicate when the user can work. Use them as context for what is realistic today, but keep the dueDate fixed to tomorrow.' : '',
     rootWorkDays?.length ? `Root work days: ${formatWorkDays(rootWorkDays, 'long')}` : '',
     taskWorkDays?.length ? `Current task work days: ${formatWorkDays(taskWorkDays, 'long')}` : '',
     effectiveWorkDays?.length ? `Effective work days (use current if set, otherwise root): ${formatWorkDays(effectiveWorkDays, 'long')}` : '',
@@ -566,8 +557,8 @@ const App = () => {
     },
     {
       id: 'split-task',
-      title: 'Split it into steps',
-      description: 'Use AI split to break a big task into actionable steps.',
+      title: 'Generate the next step',
+      description: 'Use Next Subtask to plan the best thing to do today.',
       action: 'Press Continue to move on.',
       placement: isMobile ? 'top' : 'left',
       getTarget: () => {
@@ -618,7 +609,7 @@ const App = () => {
     return {
       id: randomId(),
       title: 'Sample task: History essay',
-      description: 'Use AI split to turn this into daily steps.',
+      description: 'Use Next Subtask to generate what to do today.',
       dueDate: formatDateInput(dueDate),
       attachments: [],
       children: [],
@@ -1598,23 +1589,31 @@ const App = () => {
         setManualAiError('Expected JSON with an "items" array.');
         return;
       }
+      const nextItem = items[0];
+      if (!nextItem) {
+        setManualAiError('Expected at least one subtask item.');
+        return;
+      }
       const parent = findTask(tasks, taskId);
       if (!parent) {
         setManualAiError('This task no longer exists.');
         return;
       }
-      const subtasks = items.map((item) => ({
-        id: randomId(),
-        title: typeof item?.title === 'string' && item.title.trim() ? item.title.trim() : '(untitled task)',
-        description: item?.description || `Auto-planned from "${taskTitle}".`,
-        dueDate: item?.dueDate ?? undefined,
-        attachments: [],
-        children: [],
-        parentId: taskId,
-        status: 'open',
-        createdBy: 'ai',
-        createdAt: new Date().toISOString()
-      }));
+      const tomorrowText = resolveTomorrowDate(clientLocalDate || formatDateInput(new Date()));
+      const subtasks = [
+        {
+          id: randomId(),
+          title: typeof nextItem?.title === 'string' && nextItem.title.trim() ? nextItem.title.trim() : '(untitled task)',
+          description: nextItem?.description || `Auto-planned from "${taskTitle}".`,
+          dueDate: tomorrowText,
+          attachments: [],
+          children: [],
+          parentId: taskId,
+          status: 'open',
+          createdBy: 'ai',
+          createdAt: new Date().toISOString()
+        }
+      ];
       lastUserActionRef.current = Date.now();
       setTasks((prev) =>
         updateTask(prev, taskId, (t) => ({
@@ -1662,7 +1661,7 @@ const App = () => {
         {
           id: randomId(),
           role: 'ai',
-          content: `Skipping split for "${task.title}" because it is overdue. Update the due date to plan forward.`,
+          content: `Skipping next subtask for "${task.title}" because it is overdue. Update the due date to plan forward.`,
           createdAt: new Date().toISOString()
         }
       ]);
@@ -2015,7 +2014,7 @@ const App = () => {
       <div className="empty-icon" aria-hidden>📝</div>
       <p className="title" style={{ fontSize: 22, margin: '8px 0 6px' }}>No tasks yet</p>
       <p className="muted" style={{ maxWidth: 520 }}>
-        Add a task to start building your day-by-day plan. Include due dates to get the best splits.
+        Add a task to start building your day-by-day plan. Include due dates to get the best next steps.
       </p>
       <div className="empty-actions">
         <button
@@ -2090,7 +2089,7 @@ const App = () => {
         <div>
           <p className="title">YanPlanner</p>
           <p className="muted">
-            Turn assignments and exams into a day-by-day plan. Feed it context and let the AI split the work.
+            Turn assignments and exams into a day-by-day plan. Feed it context and let the AI pick the next subtask.
           </p>
         </div>
         <div className="header-actions">
@@ -2436,7 +2435,7 @@ const App = () => {
         <div className={`modal-backdrop ${shouldPadModalForDock ? 'onboarding-docked' : ''}`} onClick={closeTaskModal}>
           <div className="modal" onClick={(e) => e.stopPropagation()} data-onboarding="task-modal">
             <p className="task-title">Add a new task</p>
-            <p className="muted">Include due date and uploads. The AI will use them to split accurately.</p>
+            <p className="muted">Include due date and uploads. The AI will use them to plan the next subtask accurately.</p>
             <TaskForm userId={user?.id} onSubmit={handleAddTask} onCancel={closeTaskModal} />
           </div>
         </div>
@@ -2474,7 +2473,7 @@ const App = () => {
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 720 }}>
             <p className="task-title">
               {manualAiRequest.type === 'split'
-                ? `Manual AI split: ${manualAiRequest.taskTitle}`
+                ? `Manual next subtask: ${manualAiRequest.taskTitle}`
                 : 'Manual AI chat response'}
             </p>
             <p className="muted">

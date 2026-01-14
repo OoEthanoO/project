@@ -172,7 +172,7 @@ const TaskForm = ({ onSubmit, parentId = null, onCancel, userId }: Props) => {
         <label className="muted">Work days (optional)</label>
         <WorkDaysPicker value={workDays} onChange={(next) => setWorkDays(next ?? [])} />
         <p className="muted" style={{ fontSize: 12, margin: '4px 0' }}>
-          AI subtasks will be due the day after each work day (ex: Tue work day to Wed due date).
+          The AI next subtask is always due tomorrow; work days are context for what is realistic today.
         </p>
       </div>
       <div style={{ marginTop: 10 }}>
@@ -216,3 +216,4 @@ const TaskForm = ({ onSubmit, parentId = null, onCancel, userId }: Props) => {
 };
 
 export default TaskForm;
+

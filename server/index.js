@@ -145,7 +145,7 @@ app.post('/api/ai/split', async (req, res) => {
         model: result.modelUsed,
         promptTokens: result.usage?.prompt_tokens || 0,
         completionTokens: result.usage?.completion_tokens || 0,
-        description: 'AI split charge (non-refundable)'
+        description: 'AI next subtask charge (non-refundable)'
       });
     }
     if (splitEntry) {
@@ -164,7 +164,7 @@ app.post('/api/ai/split', async (req, res) => {
       await chargeFailedAiRequest({
         userId: req.body?.userId,
         billing,
-        description: 'AI split charge (failed request)'
+        description: 'AI next subtask charge (failed request)'
       });
     }
     res.status(500).json({ error: (err && err.message) || 'Unknown error' });
